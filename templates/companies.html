@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="breadcrumb"><a href="{{ url_for('dashboard') }}">← 목록</a></div>
+<h1>거래처 관리 (조회 전용)</h1>
+
+<form method="get" class="filter-row">
+  <input type="text" name="q" value="{{ keyword }}" placeholder="거래처명 검색">
+  <button type="submit" class="btn ghost">검색</button>
+</form>
+
+{% for c in companies %}
+<div class="card">
+  <h2>{{ c.name }}</h2>
+  <table>
+    <tr><td style="width:80px; color:var(--text-light);">대표자</td><td>{{ c.ceo_name or '-' }}</td></tr>
+    <tr><td style="color:var(--text-light);">전화</td><td>{{ c.phone or '-' }}</td></tr>
+    <tr><td style="color:var(--text-light);">팩스</td><td>{{ c.fax_number or '-' }}</td></tr>
+    <tr><td style="color:var(--text-light);">사업자번호</td><td>{{ c.business_number or '-' }}</td></tr>
+    <tr><td style="color:var(--text-light);">주소</td><td>{{ c.address or '-' }}</td></tr>
+    <tr><td style="color:var(--text-light);">할인율</td><td>{{ c.discount_rate }}%</td></tr>
+  </table>
+</div>
+{% else %}
+<div class="card empty">검색 결과가 없습니다.</div>
+{% endfor %}
+{% endblock %}
