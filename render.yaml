@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: jmo-lms-viewer
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: VIEWER_PASSWORD
+        sync: false
+      - key: VIEWER_SECRET_KEY
+        generateValue: true
