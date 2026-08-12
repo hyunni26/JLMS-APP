@@ -96,10 +96,15 @@ def notices():
     if conn is None:
         flash("먼저 데이터를 불러와주세요.")
         return redirect(url_for("dashboard"))
-    rows = conn.execute("SELECT * FROM notices ORDER BY created_at DESC, id DESC").fetchall()
-    work_notes = conn.execute(
-        "SELECT * FROM work_notes ORDER BY created_at DESC, id DESC LIMIT 50"
-    ).fetchall()
+    try:
+        rows = conn.execute("SELECT * FROM notices ORDER BY created_at DESC, id DESC").fetchall()
+        work_notes = conn.execute(
+            "SELECT * FROM work_notes ORDER BY created_at DESC, id DESC LIMIT 50"
+        ).fetchall()
+    except sqlite3.Error as e:
+        conn.close()
+        flash(f"공지사항 조회 실패: {e}")
+        return redirect(url_for("dashboard"))
     conn.close()
     return render_template("notices.html", notices=rows, work_notes=work_notes)
 
