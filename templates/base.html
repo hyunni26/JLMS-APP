@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>{% block title %}JMO-LMS 조회{% endblock %}</title>
+
+<link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+<meta name="theme-color" content="#1B2A4A">
+
+<!-- iOS(사파리)는 매니페스트를 온전히 못 읽어서 아래 태그들을 따로 챙겨줘야 홈화면 추가가 앱처럼 동작함 -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="JMO-LMS">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192.png') }}">
+<link rel="icon" href="{{ url_for('static', filename='icons/icon-192.png') }}">
+
+<style>
+  :root {
+    --navy: #1B2A4A;
+    --navy-dark: #14213A;
+    --gold: #C9A24B;
+    --bg: #F4F6FA;
+    --card: #FFFFFF;
+    --border: #E2E5EC;
+    --text: #1F2937;
+    --text-light: #6B7280;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Malgun Gothic", sans-serif;
+    background: var(--bg); color: var(--text); padding-bottom: 24px;
+    padding-top: env(safe-area-inset-top);
+  }
+  header {
+    background: var(--navy); color: white; padding: 14px 16px;
+    padding-top: calc(14px + env(safe-area-inset-top));
+    display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; z-index: 10;
+  }
+  header .title { font-weight: bold; font-size: 16px; }
+  header .title small { color: var(--gold); font-weight: normal; margin-left: 6px; font-size: 12px; }
+  header a { color: white; text-decoration: none; font-size: 13px; opacity: 0.85; }
+  .container { padding: 14px; max-width: 720px; margin: 0 auto; }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px; margin-bottom: 12px;
+  }
+  .breadcrumb { font-size: 13px; color: var(--text-light); margin-bottom: 10px; }
+  .breadcrumb a { color: var(--navy); text-decoration: none; }
+  h1 { font-size: 18px; margin: 0 0 12px; color: var(--navy); }
+  h2 { font-size: 15px; margin: 0 0 8px; color: var(--navy); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 8px 6px; text-align: left; border-bottom: 1px solid var(--border); }
+  th { background: var(--navy); color: white; font-weight: 600; position: sticky; top: 48px; }
+  tr:last-child td { border-bottom: none; }
+  .table-scroll { overflow-x: auto; }
+  .num { text-align: right; white-space: nowrap; }
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px;
+    background: var(--navy); color: white;
+  }
+  .btn {
+    display: inline-block; background: var(--navy); color: white; border: none;
+    padding: 10px 16px; border-radius: 8px; font-size: 14px; text-decoration: none;
+    cursor: pointer;
+  }
+  .btn.gold { background: var(--gold); color: var(--navy-dark); font-weight: bold; }
+  .btn.ghost { background: white; color: var(--navy); border: 1px solid var(--border); }
+  .menu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .menu-item {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 20px 12px; text-align: center; text-decoration: none; color: var(--navy);
+    font-weight: 600; font-size: 14px;
+  }
+  .menu-item .icon { font-size: 26px; display: block; margin-bottom: 6px; }
+  .flash {
+    background: #FFF4E5; border: 1px solid #F0C36D; color: #7A5300;
+    padding: 10px 12px; border-radius: 8px; margin-bottom: 12px; font-size: 13px;
+  }
+  .empty { color: var(--text-light); text-align: center; padding: 30px 0; font-size: 14px; }
+  select, input[type=date], input[type=text] {
+    font-size: 14px; padding: 8px; border-radius: 6px; border: 1px solid var(--border);
+  }
+  .filter-row { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+  .content-box { white-space: pre-wrap; font-size: 14px; line-height: 1.5; }
+  .sync-info { font-size: 12px; color: var(--text-light); }
+  .tabs { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+  .tabs a {
+    padding: 8px 12px; border-radius: 8px; text-decoration: none; font-size: 13px;
+    background: white; border: 1px solid var(--border); color: var(--navy);
+  }
+  .tabs a.active { background: var(--navy); color: white; border-color: var(--navy); }
+</style>
+</head>
+<body>
+<header>
+  <div class="title">JMO-LMS<small>조회 전용</small></div>
+  {% if session.get('logged_in') %}
+  <a href="{{ url_for('logout') }}">로그아웃</a>
+  {% endif %}
+</header>
+<div class="container">
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      {% for m in messages %}<div class="flash">{{ m }}</div>{% endfor %}
+    {% endif %}
+  {% endwith %}
+  {% block content %}{% endblock %}
+</div>
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("{{ url_for('static', filename='sw.js') }}");
+    });
+  }
+</script>
+</body>
+</html>

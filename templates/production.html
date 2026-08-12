@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="breadcrumb"><a href="{{ url_for('dashboard') }}">← 목록</a></div>
+<h1>생산 작업 현황</h1>
+
+<div class="tabs">
+  <a href="{{ url_for('production', room='hardroom') }}" class="{{ 'active' if room=='hardroom' }}">하드실</a>
+  <a href="{{ url_for('production', room='coatingroom') }}" class="{{ 'active' if room=='coatingroom' }}">코팅실</a>
+  <a href="{{ url_for('production', room='packing') }}" class="{{ 'active' if room=='packing' }}">완제품포장</a>
+</div>
+
+<div class="card table-scroll">
+  <table>
+    <tr>
+      <th>일자</th><th class="num">건</th><th class="num">투입량</th>
+      <th class="num">{{ "완성품" if has_output else "불량" }}</th>
+    </tr>
+    {% for s in summary %}
+    <tr onclick="location.href='{{ url_for('production', room=room, date=s.work_date) }}'" style="cursor:pointer;">
+      <td>{{ s.work_date }}</td>
+      <td class="num">{{ s.cnt }}</td>
+      <td class="num">{{ "%.1f"|format(s.input_sum or 0) }}</td>
+      <td class="num">{{ "%.1f"|format((s.output_sum if has_output else s.defect_sum) or 0) }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" class="empty">데이터가 없습니다.</td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+{% if detail %}
+<h2>{{ selected_date }} 작업 상세</h2>
+<div class="card table-scroll">
+  <table>
+    {% if room == 'hardroom' %}
+    <tr><th>의뢰처</th><th>품목</th><th>품명</th><th class="num">투입</th><th>Oven</th><th class="num">완성</th></tr>
+    {% for d in detail %}
+    <tr>
+      <td>{{ d.company_name or '-' }}</td><td>{{ d.lens_type_name or '-' }}</td><td>{{ d.lens_item_name or '' }}</td>
+      <td class="num">{{ "%.1f"|format(d.input_qty or 0) }}</td><td>{{ d.oven_name or '-' }}</td>
+      <td class="num">{{ "%.1f"|format(d.output_qty or 0) }}</td>
+    </tr>
+    {% endfor %}
+    {% elif room == 'coatingroom' %}
+    <tr><th>의뢰처</th><th>품목</th><th>품명</th><th class="num">투입</th><th>호기</th><th class="num">완성</th></tr>
+    {% for d in detail %}
+    <tr>
+      <td>{{ d.company_name or '-' }}</td><td>{{ d.lens_type_name or '-' }}</td><td>{{ d.lens_item_name or '' }}</td>
+      <td class="num">{{ "%.1f"|format(d.input_qty or 0) }}</td><td>{{ d.machine_name or '-' }}</td>
+      <td class="num">{{ "%.1f"|format(d.output_qty or 0) }}</td>
+    </tr>
+    {% endfor %}
+    {% else %}
+    <tr><th>품목</th><th>품명</th><th class="num">투입</th><th class="num">불량</th></tr>
+    {% for d in detail %}
+    <tr>
+      <td>{{ d.lens_type_name or '-' }}</td><td>{{ d.lens_item_name or '' }}</td>
+      <td class="num">{{ "%.1f"|format(d.input_qty or 0) }}</td><td class="num">{{ "%.1f"|format(d.defect_qty or 0) }}</td>
+    </tr>
+    {% endfor %}
+    {% endif %}
+  </table>
+</div>
+{% endif %}
+{% endblock %}

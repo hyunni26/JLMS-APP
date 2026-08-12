@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="breadcrumb"><a href="{{ url_for('ledger_company_list') }}">← 거래처 원장</a></div>
+<h1>{{ company.name }} 거래 원장</h1>
+
+<div class="card table-scroll">
+  <table>
+    <tr><th>일자</th><th>구분</th><th class="num">금액</th><th class="num">잔액</th></tr>
+    {% for e in entries %}
+    <tr>
+      <td style="white-space:nowrap;">{{ e.date }}</td>
+      <td>{% if e.kind == 'statement' %}거래{% else %}입금{% endif %}</td>
+      <td class="num">{{ "{:,.0f}".format(e.amount) }}</td>
+      <td class="num">{{ "{:,.0f}".format(e.balance) }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" class="empty">내역이 없습니다.</td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="card" style="background:var(--gold); color:var(--navy-dark); font-weight:bold; text-align:right;">
+  현재 미결제액: {{ "{:,.0f}".format(final_balance) }}원
+</div>
+{% endblock %}

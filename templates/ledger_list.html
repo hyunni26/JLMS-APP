@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="breadcrumb"><a href="{{ url_for('dashboard') }}">← 목록</a></div>
+<h1>거래처 원장</h1>
+<div class="card table-scroll">
+  <table>
+    <tr><th>거래처</th><th class="num">미결제액</th></tr>
+    {% for c in companies %}
+    <tr onclick="location.href='{{ url_for('ledger_detail', company_id=c.id) }}'" style="cursor:pointer;">
+      <td>{{ c.name }}</td>
+      <td class="num">{{ "{:,.0f}".format(c.balance) }}원</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

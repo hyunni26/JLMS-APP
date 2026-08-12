@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="breadcrumb"><a href="{{ url_for('dashboard') }}">← 목록</a></div>
+<h1>렌즈 관리 (조회 전용)</h1>
+
+{% for lt in lens_types %}
+<div class="card">
+  <h2>{{ lt.name }}</h2>
+  {% set items = items_by_type.get(lt.id, []) %}
+  {% if items %}
+  <div class="table-scroll">
+    <table>
+      <tr><th>품명</th><th class="num">단가</th></tr>
+      {% for it in items %}
+      <tr><td>{{ it.name }}</td><td class="num">{{ "{:,.0f}".format(it.price) }}원</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% else %}
+  <div class="empty" style="padding:10px 0;">등록된 품명이 없습니다.</div>
+  {% endif %}
+</div>
+{% else %}
+<div class="card empty">등록된 품목이 없습니다.</div>
+{% endfor %}
+{% endblock %}
