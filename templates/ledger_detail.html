@@ -10,9 +10,9 @@
 
 <div class="card">
   <form method="get" class="filter-row">
-    <input type="date" name="start" value="{{ start }}">
+    <input type="date" name="start" value="{{ start }}" onchange="this.form.submit()">
     <span style="color:var(--text-light);">~</span>
-    <input type="date" name="end" value="{{ end }}">
+    <input type="date" name="end" value="{{ end }}" onchange="this.form.submit()">
     <input type="number" name="discount" step="0.1" min="0" max="100" placeholder="할인율(%)"
            value="{{ discount if discount else '' }}" style="width:100px;">
     <button type="submit" class="btn ghost">조회</button>
