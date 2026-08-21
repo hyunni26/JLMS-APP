@@ -8,6 +8,19 @@
   <a href="{{ url_for('production', room='coatingroom') }}" class="{{ 'active' if room=='coatingroom' }}">코팅실</a>
   <a href="{{ url_for('production', room='packing') }}" class="{{ 'active' if room=='packing' }}">완제품포장</a>
 </div>
+<div class="breadcrumb" style="text-align:right; margin-top:-6px;">
+  <a href="{{ url_for('production_history', room=room) }}">📊 기간별 생산 이력 보기 →</a>
+</div>
+
+<div class="card">
+  <form method="get" class="filter-row">
+    <input type="hidden" name="room" value="{{ room }}">
+    <input type="date" name="start" value="{{ start }}">
+    <span style="color:var(--text-light);">~</span>
+    <input type="date" name="end" value="{{ end }}">
+    <button type="submit" class="btn ghost">조회</button>
+  </form>
+</div>
 
 <div class="card table-scroll">
   <table>
@@ -16,7 +29,7 @@
       <th class="num">{{ "완성품" if has_output else "불량" }}</th>
     </tr>
     {% for s in summary %}
-    <tr onclick="location.href='{{ url_for('production', room=room, date=s.work_date) }}'" style="cursor:pointer;">
+    <tr onclick="location.href='{{ url_for('production', room=room, date=s.work_date, start=start, end=end) }}'" style="cursor:pointer;">
       <td>{{ s.work_date }}</td>
       <td class="num">{{ s.cnt }}</td>
       <td class="num">{{ "%.1f"|format(s.input_sum or 0) }}</td>
