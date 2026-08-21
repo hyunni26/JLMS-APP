@@ -3,12 +3,35 @@
 <div class="breadcrumb"><a href="{{ url_for('dashboard') }}">← 목록</a></div>
 <h1>RX 작업 현황</h1>
 
-<form method="get" class="filter-row">
-  <input type="date" name="date" value="{{ selected_date }}" onchange="this.form.submit()">
+<div class="tabs">
+  <a href="{{ url_for('night_work', view='company', start=start, end=end) }}" class="{{ 'active' if view=='company' }}">거래처별</a>
+  <a href="{{ url_for('night_work', view='total', start=start, end=end) }}" class="{{ 'active' if view=='total' }}">총합계</a>
+</div>
+
+<form method="get" class="filter-row" id="dateForm">
+  <input type="hidden" name="view" value="{{ view }}">
+  <input type="date" name="start" value="{{ start }}" onchange="this.form.submit()">
+  <span style="color:var(--text-light);">~</span>
+  <input type="date" name="end" value="{{ end }}" onchange="this.form.submit()">
 </form>
 
 <div class="card table-scroll">
   <table>
+    {% if view == 'total' %}
+    <tr><th>처리종류</th><th class="num">작업</th><th class="num">컷팅</th><th class="num">재작업</th><th class="num">총 개수</th></tr>
+    {% for r in rows %}
+    <tr>
+      <td>{{ r.process_type_name or '-' }}</td>
+      <td class="num">{{ "%.1f"|format(r.work_qty or 0) }}</td>
+      <td class="num">{{ "%.1f"|format(r.cut_qty or 0) }}</td>
+      <td class="num">{{ "%.1f"|format(r.rework_qty or 0) }}</td>
+      <td class="num" style="font-weight:600;">{{ "%.1f"|format(r.total_qty) }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="empty">데이터가 없습니다.</td></tr>
+    {% endfor %}
+
+    {% else %}
     <tr><th>거래처</th><th>처리종류</th><th class="num">작업</th><th class="num">컷팅</th><th class="num">재작업</th><th class="num">총 개수</th></tr>
     {% for r in rows %}
     <tr>
@@ -24,6 +47,7 @@
     {% else %}
     <tr><td colspan="6" class="empty">데이터가 없습니다.</td></tr>
     {% endfor %}
+    {% endif %}
   </table>
 </div>
 {% endblock %}
