@@ -246,10 +246,15 @@ def night_work():
         return redirect(url_for("dashboard"))
 
     latest = conn.execute("SELECT MAX(work_date) as d FROM night_work_entries").fetchone()["d"]
-    date_filter = request.args.get("date", "").strip() or latest or ""
+    default_date = latest or datetime.now().strftime("%Y-%m-%d")
+    start = request.args.get("start", "").strip() or default_date
+    end = request.args.get("end", "").strip() or default_date
+    view = request.args.get("view", "company")
+    if view not in ("company", "total"):
+        view = "company"
 
     rows = []
-    if date_filter:
+    if start and end:
         query = """
             SELECT ni.*, e.work_date, e.company_id, c.name as company_name,
                    pt.name as process_type_name
@@ -257,19 +262,38 @@ def night_work():
             JOIN night_work_entries e ON ni.entry_id = e.id
             LEFT JOIN companies c ON e.company_id = c.id
             LEFT JOIN process_types pt ON ni.process_type_id = pt.id
-            WHERE e.work_date = ?
+            WHERE e.work_date BETWEEN ? AND ?
             ORDER BY c.name, ni.id
         """
-        rows = conn.execute(query, (date_filter,)).fetchall()
+        rows = conn.execute(query, (start, end)).fetchall()
     conn.close()
 
-    # 거래처별로 처리종류 행을 묶어서 보여주기 위한 rowspan 계산 + 행별 총 개수
     processed = []
     for r in rows:
         d = dict(r)
         d["total_qty"] = (d["work_qty"] or 0) + (d["cut_qty"] or 0) + (d["rework_qty"] or 0)
         processed.append(d)
 
+    if view == "total":
+        # 거래처 구분 없이 처리종류별로만 합산 (작업/컷팅/재작업 각각 별도 합계)
+        totals = {}
+        order = []
+        for d in processed:
+            key = d["process_type_name"] or "-"
+            if key not in totals:
+                totals[key] = {
+                    "process_type_name": key,
+                    "work_qty": 0, "cut_qty": 0, "rework_qty": 0, "total_qty": 0,
+                }
+                order.append(key)
+            totals[key]["work_qty"] += d["work_qty"] or 0
+            totals[key]["cut_qty"] += d["cut_qty"] or 0
+            totals[key]["rework_qty"] += d["rework_qty"] or 0
+            totals[key]["total_qty"] += d["total_qty"]
+        result_rows = [totals[k] for k in order]
+        return render_template("night_work.html", rows=result_rows, start=start, end=end, view=view)
+
+    # 거래처별: 같은 거래처가 이어지는 구간만큼 rowspan 계산
     i = 0
     while i < len(processed):
         j = i
@@ -280,7 +304,7 @@ def night_work():
             processed[k]["company_rowspan"] = 0
         i = j
 
-    return render_template("night_work.html", rows=processed, selected_date=date_filter)
+    return render_template("night_work.html", rows=processed, start=start, end=end, view=view)
 
 
 # ---------------- 6. 생산 작업 현황 (하드실/코팅실/완제품포장) ----------------
