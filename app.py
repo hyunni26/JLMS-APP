@@ -1,7 +1,7 @@
 import os
 import sqlite3
 import tempfile
-from datetime import timedelta, datetime
+from datetime import timedelta, datetime, timezone
 from functools import wraps
 
 from flask import Flask, render_template, redirect, url_for, request, session, flash
@@ -13,6 +13,13 @@ app.secret_key = os.environ.get("VIEWER_SECRET_KEY", "jmo-lms-viewer-dev-key-cha
 
 VIEW_PASSWORD = os.environ.get("VIEWER_PASSWORD", "1234")
 DB_PATH = os.path.join(tempfile.gettempdir(), "jmo_lms_viewer.db")
+
+# Render 서버는 UTC로 동작하므로, 화면 표시/날짜 기본값은 한국시간(UTC+9) 기준으로 맞춘다.
+KST = timezone(timedelta(hours=9))
+
+
+def now_kst():
+    return datetime.now(KST)
 
 
 # ---------------- DB 접근 ----------------
@@ -28,7 +35,8 @@ def db_last_synced():
     if not os.path.exists(DB_PATH):
         return None
     mtime = os.path.getmtime(DB_PATH)
-    return datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
+    synced = datetime.fromtimestamp(mtime, tz=timezone.utc).astimezone(KST)
+    return synced.strftime("%Y-%m-%d %H:%M:%S")
 
 
 # ---------------- 로그인 보호 ----------------
@@ -144,8 +152,8 @@ def ledger_detail(company_id):
         flash("먼저 데이터를 불러와주세요.")
         return redirect(url_for("dashboard"))
 
-    today = datetime.now().strftime("%Y-%m-%d")
-    default_start = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+    today = now_kst().strftime("%Y-%m-%d")
+    default_start = (now_kst() - timedelta(days=30)).strftime("%Y-%m-%d")
     start = request.args.get("start", "").strip() or default_start
     end = request.args.get("end", "").strip() or today
     discount = _parse_discount(request.args.get("discount", ""))
@@ -246,7 +254,7 @@ def night_work():
         return redirect(url_for("dashboard"))
 
     latest = conn.execute("SELECT MAX(work_date) as d FROM night_work_entries").fetchone()["d"]
-    default_date = latest or datetime.now().strftime("%Y-%m-%d")
+    default_date = latest or now_kst().strftime("%Y-%m-%d")
     start = request.args.get("start", "").strip() or default_date
     end = request.args.get("end", "").strip() or default_date
     view = request.args.get("view", "company")
@@ -411,8 +419,8 @@ def production_history():
     table = {"hardroom": "hardroom_logs", "coatingroom": "coatingroom_logs", "packing": "packing_logs"}[room]
     has_output = room in ("hardroom", "coatingroom")
 
-    today = datetime.now().strftime("%Y-%m-%d")
-    default_start = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+    today = now_kst().strftime("%Y-%m-%d")
+    default_start = (now_kst() - timedelta(days=30)).strftime("%Y-%m-%d")
     start = request.args.get("start", "").strip() or default_start
     end = request.args.get("end", "").strip() or today
 
