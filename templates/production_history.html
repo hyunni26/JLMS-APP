@@ -12,9 +12,9 @@
 <div class="card">
   <form method="get" class="filter-row">
     <input type="hidden" name="room" value="{{ room }}">
-    <input type="date" name="start" value="{{ start }}">
+    <input type="date" name="start" value="{{ start }}" onchange="this.form.submit()">
     <span style="color:var(--text-light);">~</span>
-    <input type="date" name="end" value="{{ end }}">
+    <input type="date" name="end" value="{{ end }}" onchange="this.form.submit()">
     <select name="lens_type_id" style="flex:1; min-width:110px;">
       <option value="">전체 품목</option>
       {% for lt in lens_types %}
