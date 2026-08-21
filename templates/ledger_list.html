@@ -11,6 +11,8 @@
       <option value="{{ c.id }}">{{ c.name }}</option>
       {% endfor %}
     </select>
+    <input type="number" name="discount" step="0.1" min="0" max="100"
+           placeholder="할인율(%) - 조회용, 선택 입력" style="width:100%; margin-bottom:10px;">
     <button type="submit" class="btn gold" style="width:100%;">조회</button>
   </form>
 </div>
