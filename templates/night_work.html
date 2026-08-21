@@ -4,25 +4,22 @@
 <h1>RX 작업 현황</h1>
 
 <form method="get" class="filter-row">
-  <select name="date" onchange="this.form.submit()">
-    <option value="">전체</option>
-    {% for d in dates %}
-    <option value="{{ d.work_date }}" {% if d.work_date == selected_date %}selected{% endif %}>{{ d.work_date }}</option>
-    {% endfor %}
-  </select>
+  <input type="date" name="date" value="{{ selected_date }}" onchange="this.form.submit()">
 </form>
 
 <div class="card table-scroll">
   <table>
-    <tr><th>일자</th><th>거래처</th><th>처리종류</th><th class="num">작업</th><th class="num">컷팅</th><th class="num">재작업</th></tr>
+    <tr><th>거래처</th><th>처리종류</th><th class="num">작업</th><th class="num">컷팅</th><th class="num">재작업</th><th class="num">총 개수</th></tr>
     {% for r in rows %}
     <tr>
-      <td style="white-space:nowrap;">{{ r.work_date }}</td>
-      <td>{{ r.company_name or '-' }}</td>
+      {% if r.company_rowspan > 0 %}
+      <td rowspan="{{ r.company_rowspan }}" style="vertical-align:middle; font-weight:600;">{{ r.company_name or '-' }}</td>
+      {% endif %}
       <td>{{ r.process_type_name or '-' }}</td>
       <td class="num">{{ "%.1f"|format(r.work_qty or 0) }}</td>
       <td class="num">{{ "%.1f"|format(r.cut_qty or 0) }}</td>
       <td class="num">{{ "%.1f"|format(r.rework_qty or 0) }}</td>
+      <td class="num" style="font-weight:600;">{{ "%.1f"|format(r.total_qty) }}</td>
     </tr>
     {% else %}
     <tr><td colspan="6" class="empty">데이터가 없습니다.</td></tr>
