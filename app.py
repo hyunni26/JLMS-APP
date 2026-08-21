@@ -105,6 +105,15 @@ def notices():
 
 
 # ---------------- 2. 거래처 원장 ----------------
+def _parse_discount(raw):
+    """조회용 할인율(%) 파싱. 잘못된 값이거나 없으면 0으로 처리."""
+    try:
+        val = float(raw)
+    except (TypeError, ValueError):
+        return 0.0
+    return min(max(val, 0.0), 100.0)
+
+
 @app.route("/ledger")
 @login_required
 def ledger_company_list():
@@ -116,7 +125,11 @@ def ledger_company_list():
     company_id = request.args.get("company_id", "").strip()
     if company_id:
         conn.close()
-        return redirect(url_for("ledger_detail", company_id=company_id))
+        kwargs = {"company_id": company_id}
+        discount_raw = request.args.get("discount", "").strip()
+        if discount_raw:
+            kwargs["discount"] = discount_raw
+        return redirect(url_for("ledger_detail", **kwargs))
 
     companies = conn.execute("SELECT id, name FROM companies ORDER BY name").fetchall()
     conn.close()
@@ -135,6 +148,7 @@ def ledger_detail(company_id):
     default_start = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
     start = request.args.get("start", "").strip() or default_start
     end = request.args.get("end", "").strip() or today
+    discount = _parse_discount(request.args.get("discount", ""))
 
     company = conn.execute("SELECT * FROM companies WHERE id=?", (company_id,)).fetchone()
     if company is None:
@@ -142,8 +156,8 @@ def ledger_detail(company_id):
         flash("거래처를 찾을 수 없습니다.")
         return redirect(url_for("ledger_company_list"))
 
-    # 이월잔액: 조회 시작일 이전까지의 누적 잔액
-    prior_statement = conn.execute(
+    # 이월잔액: 조회 시작일 이전까지의 누적 잔액 (할인율은 거래(statement) 금액에만 적용, 조회용 계산이며 DB에는 저장하지 않음)
+    prior_statement_raw = conn.execute(
         "SELECT COALESCE(SUM(total_amount),0) as s FROM statements WHERE company_id=? AND statement_date < ?",
         (company_id, start),
     ).fetchone()["s"]
@@ -151,7 +165,7 @@ def ledger_detail(company_id):
         "SELECT COALESCE(SUM(amount),0) as s FROM payments WHERE company_id=? AND payment_date < ?",
         (company_id, start),
     ).fetchone()["s"]
-    opening_balance = prior_statement - prior_payment
+    opening_balance = prior_statement_raw * (1 - discount / 100) - prior_payment
 
     statements = conn.execute(
         "SELECT statement_date as date, total_amount as amount, 'statement' as kind, id "
@@ -170,15 +184,17 @@ def ledger_detail(company_id):
     balance = opening_balance
     for e in entries:
         if e["kind"] == "statement":
-            balance += e["amount"]
+            e["calc_amount"] = e["amount"] * (1 - discount / 100)
+            balance += e["calc_amount"]
         else:
-            balance -= e["amount"]
+            e["calc_amount"] = e["amount"]
+            balance -= e["calc_amount"]
         e["balance"] = balance
     conn.close()
     return render_template(
         "ledger_detail.html",
         company=company, entries=entries, final_balance=balance,
-        opening_balance=opening_balance, start=start, end=end,
+        opening_balance=opening_balance, start=start, end=end, discount=discount,
     )
 
 
@@ -229,40 +245,45 @@ def night_work():
         flash("먼저 데이터를 불러와주세요.")
         return redirect(url_for("dashboard"))
 
-    date_filter = request.args.get("date", "").strip()
-    query = """
-        SELECT ni.*, e.work_date, e.company_id, c.name as company_name,
-               pt.name as process_type_name
-        FROM night_work_items ni
-        JOIN night_work_entries e ON ni.entry_id = e.id
-        LEFT JOIN companies c ON e.company_id = c.id
-        LEFT JOIN process_types pt ON ni.process_type_id = pt.id
-    """
-    params = ()
-    if date_filter:
-        query += " WHERE e.work_date = ?"
-        params = (date_filter,)
-    query += " ORDER BY e.work_date DESC, c.name"
-    rows = conn.execute(query, params).fetchall()
+    latest = conn.execute("SELECT MAX(work_date) as d FROM night_work_entries").fetchone()["d"]
+    date_filter = request.args.get("date", "").strip() or latest or ""
 
-    dates = conn.execute(
-        "SELECT DISTINCT work_date FROM night_work_entries ORDER BY work_date DESC LIMIT 60"
-    ).fetchall()
+    rows = []
+    if date_filter:
+        query = """
+            SELECT ni.*, e.work_date, e.company_id, c.name as company_name,
+                   pt.name as process_type_name
+            FROM night_work_items ni
+            JOIN night_work_entries e ON ni.entry_id = e.id
+            LEFT JOIN companies c ON e.company_id = c.id
+            LEFT JOIN process_types pt ON ni.process_type_id = pt.id
+            WHERE e.work_date = ?
+            ORDER BY c.name, ni.id
+        """
+        rows = conn.execute(query, (date_filter,)).fetchall()
     conn.close()
-    return render_template("night_work.html", rows=rows, dates=dates, selected_date=date_filter)
+
+    # 거래처별로 처리종류 행을 묶어서 보여주기 위한 rowspan 계산 + 행별 총 개수
+    processed = []
+    for r in rows:
+        d = dict(r)
+        d["total_qty"] = (d["work_qty"] or 0) + (d["cut_qty"] or 0) + (d["rework_qty"] or 0)
+        processed.append(d)
+
+    i = 0
+    while i < len(processed):
+        j = i
+        while j < len(processed) and processed[j]["company_name"] == processed[i]["company_name"]:
+            j += 1
+        processed[i]["company_rowspan"] = j - i
+        for k in range(i + 1, j):
+            processed[k]["company_rowspan"] = 0
+        i = j
+
+    return render_template("night_work.html", rows=processed, selected_date=date_filter)
 
 
 # ---------------- 6. 생산 작업 현황 (하드실/코팅실/완제품포장) ----------------
-def _production_summary(conn, table, extra_cols=""):
-    return conn.execute(
-        f"""
-        SELECT work_date, COUNT(*) as cnt, SUM(input_qty) as input_sum, SUM(output_qty) as output_sum
-        {extra_cols}
-        FROM {table} GROUP BY work_date ORDER BY work_date DESC LIMIT 60
-        """
-    ).fetchall()
-
-
 @app.route("/production")
 @login_required
 def production():
@@ -273,6 +294,8 @@ def production():
 
     room = request.args.get("room", "hardroom")
     date_filter = request.args.get("date", "").strip()
+    start = request.args.get("start", "").strip()
+    end = request.args.get("end", "").strip()
 
     if room == "coatingroom":
         table, has_output = "coatingroom_logs", True
@@ -281,15 +304,29 @@ def production():
     else:
         room, table, has_output = "hardroom", "hardroom_logs", True
 
+    where_clause = ""
+    params = ()
+    if start and end:
+        where_clause = "WHERE work_date BETWEEN ? AND ?"
+        params = (start, end)
+    elif start:
+        where_clause = "WHERE work_date >= ?"
+        params = (start,)
+    elif end:
+        where_clause = "WHERE work_date <= ?"
+        params = (end,)
+
     if has_output:
         summary = conn.execute(
             f"SELECT work_date, COUNT(*) as cnt, SUM(input_qty) as input_sum, SUM(output_qty) as output_sum "
-            f"FROM {table} GROUP BY work_date ORDER BY work_date DESC LIMIT 60"
+            f"FROM {table} {where_clause} GROUP BY work_date ORDER BY work_date DESC LIMIT 60",
+            params,
         ).fetchall()
     else:
         summary = conn.execute(
             f"SELECT work_date, COUNT(*) as cnt, SUM(input_qty) as input_sum, SUM(defect_qty) as defect_sum "
-            f"FROM {table} GROUP BY work_date ORDER BY work_date DESC LIMIT 60"
+            f"FROM {table} {where_clause} GROUP BY work_date ORDER BY work_date DESC LIMIT 60",
+            params,
         ).fetchall()
 
     detail = None
@@ -331,7 +368,93 @@ def production():
     conn.close()
     return render_template(
         "production.html", room=room, summary=summary, detail=detail,
-        selected_date=date_filter, has_output=has_output,
+        selected_date=date_filter, has_output=has_output, start=start, end=end,
+    )
+
+
+# ---------------- 6-1. 생산 이력 (기간 + 품목 집계) ----------------
+@app.route("/production/history")
+@login_required
+def production_history():
+    conn = get_db()
+    if conn is None:
+        flash("먼저 데이터를 불러와주세요.")
+        return redirect(url_for("dashboard"))
+
+    room = request.args.get("room", "hardroom")
+    if room not in ("hardroom", "coatingroom", "packing"):
+        room = "hardroom"
+    table = {"hardroom": "hardroom_logs", "coatingroom": "coatingroom_logs", "packing": "packing_logs"}[room]
+    has_output = room in ("hardroom", "coatingroom")
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    default_start = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+    start = request.args.get("start", "").strip() or default_start
+    end = request.args.get("end", "").strip() or today
+
+    lens_types = conn.execute("SELECT id, name FROM lens_types ORDER BY name").fetchall()
+    lens_type_id = request.args.get("lens_type_id", "").strip()
+    lens_type_name = "전체"
+    if lens_type_id:
+        lt = conn.execute("SELECT name FROM lens_types WHERE id=?", (lens_type_id,)).fetchone()
+        lens_type_name = lt["name"] if lt else "전체"
+
+    where = "work_date BETWEEN ? AND ?"
+    params = [start, end]
+    if lens_type_id:
+        where += " AND lens_type_id=?"
+        params.append(lens_type_id)
+
+    if has_output:
+        total = conn.execute(
+            f"""SELECT COUNT(*) as cnt, COALESCE(SUM(input_qty),0) as input_sum,
+                       COALESCE(SUM(output_qty),0) as output_sum, COALESCE(SUM(defect_qty),0) as defect_sum,
+                       COALESCE(SUM(discard_qty),0) as discard_sum
+                FROM {table} WHERE {where}""",
+            params,
+        ).fetchone()
+        by_lens_type = conn.execute(
+            f"""SELECT lt.id as lens_type_id, lt.name, COUNT(*) as cnt,
+                       COALESCE(SUM(t.input_qty),0) as input_sum, COALESCE(SUM(t.output_qty),0) as output_sum,
+                       COALESCE(SUM(t.defect_qty),0) as defect_sum
+                FROM {table} t
+                LEFT JOIN lens_types lt ON t.lens_type_id = lt.id
+                WHERE {where}
+                GROUP BY t.lens_type_id ORDER BY input_sum DESC""",
+            params,
+        ).fetchall()
+    else:
+        total = conn.execute(
+            f"""SELECT COUNT(*) as cnt, COALESCE(SUM(input_qty),0) as input_sum,
+                       COALESCE(SUM(defect_qty),0) as defect_sum
+                FROM {table} WHERE {where}""",
+            params,
+        ).fetchone()
+        by_lens_type = conn.execute(
+            f"""SELECT lt.id as lens_type_id, lt.name, COUNT(*) as cnt,
+                       COALESCE(SUM(t.input_qty),0) as input_sum, COALESCE(SUM(t.defect_qty),0) as defect_sum
+                FROM {table} t
+                LEFT JOIN lens_types lt ON t.lens_type_id = lt.id
+                WHERE {where}
+                GROUP BY t.lens_type_id ORDER BY input_sum DESC""",
+            params,
+        ).fetchall()
+    conn.close()
+
+    total = dict(total) if total else {}
+    input_sum = total.get("input_sum", 0) or 0
+    if has_output:
+        output_sum = total.get("output_sum", 0) or 0
+        rate = (output_sum / input_sum * 100) if input_sum else 0
+    else:
+        defect_sum = total.get("defect_sum", 0) or 0
+        rate = ((input_sum - defect_sum) / input_sum * 100) if input_sum else 0
+
+    return render_template(
+        "production_history.html",
+        room=room, has_output=has_output, start=start, end=end,
+        lens_types=lens_types, lens_type_id=lens_type_id, lens_type_name=lens_type_name,
+        total=total, rate=rate, by_lens_type=by_lens_type,
     )
 
 
