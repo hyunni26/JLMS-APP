@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="breadcrumb"><a href="{{ url_for('production', room=room) }}">← 생산 작업 현황</a></div>
+<h1>생산 이력</h1>
+
+<div class="tabs">
+  <a href="{{ url_for('production_history', room='hardroom', start=start, end=end, lens_type_id=lens_type_id) }}" class="{{ 'active' if room=='hardroom' }}">하드실</a>
+  <a href="{{ url_for('production_history', room='coatingroom', start=start, end=end, lens_type_id=lens_type_id) }}" class="{{ 'active' if room=='coatingroom' }}">코팅실</a>
+  <a href="{{ url_for('production_history', room='packing', start=start, end=end, lens_type_id=lens_type_id) }}" class="{{ 'active' if room=='packing' }}">완제품포장</a>
+</div>
+
+<div class="card">
+  <form method="get" class="filter-row">
+    <input type="hidden" name="room" value="{{ room }}">
+    <input type="date" name="start" value="{{ start }}">
+    <span style="color:var(--text-light);">~</span>
+    <input type="date" name="end" value="{{ end }}">
+    <select name="lens_type_id" style="flex:1; min-width:110px;">
+      <option value="">전체 품목</option>
+      {% for lt in lens_types %}
+      <option value="{{ lt.id }}" {{ "selected" if lens_type_id|string == lt.id|string }}>{{ lt.name }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn ghost">조회</button>
+  </form>
+</div>
+
+<div class="card" style="background:var(--gold); color:var(--navy-dark);">
+  <div style="font-size:12px; opacity:0.85; margin-bottom:4px;">{{ start }} ~ {{ end }} · {{ lens_type_name }}</div>
+  {% if has_output %}
+  <div style="font-weight:bold; font-size:15px; line-height:1.6;">
+    총 건수 {{ total.cnt or 0 }} · 투입량 {{ "%.1f"|format(total.input_sum or 0) }} ·
+    완성품 {{ "%.1f"|format(total.output_sum or 0) }} · 불량 {{ "%.1f"|format(total.defect_sum or 0) }} ·
+    수율 {{ "%.1f"|format(rate) }}%
+  </div>
+  {% else %}
+  <div style="font-weight:bold; font-size:15px; line-height:1.6;">
+    총 건수 {{ total.cnt or 0 }} · 투입량 {{ "%.1f"|format(total.input_sum or 0) }} ·
+    불량 {{ "%.1f"|format(total.defect_sum or 0) }} · 수율 {{ "%.1f"|format(rate) }}%
+  </div>
+  {% endif %}
+</div>
+
+<div class="card table-scroll">
+  <h2>품목별 생산량 (투입량 많은 순)</h2>
+  <table>
+    {% if has_output %}
+    <tr><th>품목</th><th class="num">건</th><th class="num">투입량</th><th class="num">완성품</th><th class="num">불량</th><th class="num">수율(%)</th></tr>
+    {% for r in by_lens_type %}
+    <tr>
+      <td>{{ r.name or "(품목 미지정)" }}</td>
+      <td class="num">{{ r.cnt }}</td>
+      <td class="num">{{ "%.1f"|format(r.input_sum or 0) }}</td>
+      <td class="num">{{ "%.1f"|format(r.output_sum or 0) }}</td>
+      <td class="num">{{ "%.1f"|format(r.defect_sum or 0) }}</td>
+      <td class="num">{{ "%.1f"|format((r.output_sum / r.input_sum * 100) if r.input_sum else 0) }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="empty">해당 조건의 데이터가 없습니다.</td></tr>
+    {% endfor %}
+    {% else %}
+    <tr><th>품목</th><th class="num">건</th><th class="num">투입량</th><th class="num">불량</th><th class="num">수율(%)</th></tr>
+    {% for r in by_lens_type %}
+    <tr>
+      <td>{{ r.name or "(품목 미지정)" }}</td>
+      <td class="num">{{ r.cnt }}</td>
+      <td class="num">{{ "%.1f"|format(r.input_sum or 0) }}</td>
+      <td class="num">{{ "%.1f"|format(r.defect_sum or 0) }}</td>
+      <td class="num">{{ "%.1f"|format(((r.input_sum - r.defect_sum) / r.input_sum * 100) if r.input_sum else 0) }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="empty">해당 조건의 데이터가 없습니다.</td></tr>
+    {% endfor %}
+    {% endif %}
+  </table>
+</div>
+{% endblock %}
