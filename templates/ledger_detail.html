@@ -2,12 +2,19 @@
 {% block content %}
 <div class="breadcrumb"><a href="{{ url_for('ledger_company_list') }}">← 거래처 원장</a></div>
 <h1>{{ company.name }} 거래 원장</h1>
+{% if discount %}
+<div class="sync-info" style="margin-bottom:10px;">
+  <span class="badge">조회용 할인율 {{ "%g"|format(discount) }}% 적용</span> — 실제 거래처 정보는 변경되지 않습니다.
+</div>
+{% endif %}
 
 <div class="card">
   <form method="get" class="filter-row">
     <input type="date" name="start" value="{{ start }}">
     <span style="color:var(--text-light);">~</span>
     <input type="date" name="end" value="{{ end }}">
+    <input type="number" name="discount" step="0.1" min="0" max="100" placeholder="할인율(%)"
+           value="{{ discount if discount else '' }}" style="width:100px;">
     <button type="submit" class="btn ghost">조회</button>
   </form>
 </div>
@@ -23,7 +30,12 @@
     <tr>
       <td style="white-space:nowrap;">{{ e.date }}</td>
       <td>{% if e.kind == 'statement' %}거래{% else %}입금{% endif %}</td>
-      <td class="num">{{ "{:,.0f}".format(e.amount) }}</td>
+      <td class="num">
+        {{ "{:,.0f}".format(e.amount) }}
+        {% if discount and e.kind == 'statement' %}
+        <div style="font-size:11px; color:var(--text-light);">할인후 {{ "{:,.0f}".format(e.calc_amount) }}</div>
+        {% endif %}
+      </td>
       <td class="num">{{ "{:,.0f}".format(e.balance) }}</td>
     </tr>
     {% else %}
