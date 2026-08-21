@@ -15,9 +15,9 @@
 <div class="card">
   <form method="get" class="filter-row">
     <input type="hidden" name="room" value="{{ room }}">
-    <input type="date" name="start" value="{{ start }}">
+    <input type="date" name="start" value="{{ start }}" onchange="this.form.submit()">
     <span style="color:var(--text-light);">~</span>
-    <input type="date" name="end" value="{{ end }}">
+    <input type="date" name="end" value="{{ end }}" onchange="this.form.submit()">
     <button type="submit" class="btn ghost">조회</button>
   </form>
 </div>
