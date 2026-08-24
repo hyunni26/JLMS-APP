@@ -30,9 +30,18 @@
     {% else %}
     <tr><td colspan="5" class="empty">데이터가 없습니다.</td></tr>
     {% endfor %}
+    {% if grand_total %}
+    <tr style="background:var(--gold); font-weight:700;">
+      <td>{{ grand_total.process_type_name }}</td>
+      <td class="num">{{ "%.1f"|format(grand_total.work_qty) }}</td>
+      <td class="num">{{ "%.1f"|format(grand_total.cut_qty) }}</td>
+      <td class="num">{{ "%.1f"|format(grand_total.rework_qty) }}</td>
+      <td class="num">{{ "%.1f"|format(grand_total.total_qty) }}</td>
+    </tr>
+    {% endif %}
 
     {% else %}
-    <tr><th>거래처</th><th>처리종류</th><th class="num">작업</th><th class="num">컷팅</th><th class="num">재작업</th><th class="num">총 개수</th></tr>
+    <tr><th>거래처</th><th>처리종류</th><th class="num">작업</th><th class="num">컷팅</th><th class="num">재작업</th><th class="num">총 개수</th><th class="num">거래처 합계</th></tr>
     {% for r in rows %}
     <tr>
       {% if r.company_rowspan > 0 %}
@@ -43,9 +52,12 @@
       <td class="num">{{ "%.1f"|format(r.cut_qty or 0) }}</td>
       <td class="num">{{ "%.1f"|format(r.rework_qty or 0) }}</td>
       <td class="num" style="font-weight:600;">{{ "%.1f"|format(r.total_qty) }}</td>
+      {% if r.company_rowspan > 0 %}
+      <td rowspan="{{ r.company_rowspan }}" class="num" style="vertical-align:middle; font-weight:700; background:var(--gold);">{{ "%.1f"|format(r.company_total) }}</td>
+      {% endif %}
     </tr>
     {% else %}
-    <tr><td colspan="6" class="empty">데이터가 없습니다.</td></tr>
+    <tr><td colspan="7" class="empty">데이터가 없습니다.</td></tr>
     {% endfor %}
     {% endif %}
   </table>
