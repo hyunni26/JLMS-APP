@@ -299,15 +299,26 @@ def night_work():
             totals[key]["rework_qty"] += d["rework_qty"] or 0
             totals[key]["total_qty"] += d["total_qty"]
         result_rows = [totals[k] for k in order]
-        return render_template("night_work.html", rows=result_rows, start=start, end=end, view=view)
+        grand_total = {
+            "process_type_name": "합계",
+            "work_qty": sum(t["work_qty"] for t in result_rows),
+            "cut_qty": sum(t["cut_qty"] for t in result_rows),
+            "rework_qty": sum(t["rework_qty"] for t in result_rows),
+            "total_qty": sum(t["total_qty"] for t in result_rows),
+        }
+        return render_template(
+            "night_work.html", rows=result_rows, grand_total=grand_total,
+            start=start, end=end, view=view,
+        )
 
-    # 거래처별: 같은 거래처가 이어지는 구간만큼 rowspan 계산
+    # 거래처별: 같은 거래처가 이어지는 구간만큼 rowspan 계산 + 거래처 총합계
     i = 0
     while i < len(processed):
         j = i
         while j < len(processed) and processed[j]["company_name"] == processed[i]["company_name"]:
             j += 1
         processed[i]["company_rowspan"] = j - i
+        processed[i]["company_total"] = sum(processed[k]["total_qty"] for k in range(i, j))
         for k in range(i + 1, j):
             processed[k]["company_rowspan"] = 0
         i = j
