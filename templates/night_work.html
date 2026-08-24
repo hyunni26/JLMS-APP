@@ -41,7 +41,7 @@
     {% endif %}
 
     {% else %}
-    <tr><th>거래처</th><th>처리종류</th><th class="num">작업</th><th class="num">컷팅</th><th class="num">재작업</th><th class="num">총 개수</th><th class="num">거래처 합계</th></tr>
+    <tr><th>거래처</th><th>처리종류</th><th class="num">작업</th><th class="num">컷팅</th><th class="num">재작업</th><th class="num" colspan="2">총 합</th></tr>
     {% for r in rows %}
     <tr>
       {% if r.company_rowspan > 0 %}
@@ -53,7 +53,7 @@
       <td class="num">{{ "%.1f"|format(r.rework_qty or 0) }}</td>
       <td class="num" style="font-weight:600;">{{ "%.1f"|format(r.total_qty) }}</td>
       {% if r.company_rowspan > 0 %}
-      <td rowspan="{{ r.company_rowspan }}" class="num" style="vertical-align:middle; font-weight:700; background:var(--gold);">{{ "%.1f"|format(r.company_total) }}</td>
+      <td rowspan="{{ r.company_rowspan }}" class="num" style="vertical-align:middle; font-weight:700;">{{ "%.1f"|format(r.company_total) }}</td>
       {% endif %}
     </tr>
     {% else %}
