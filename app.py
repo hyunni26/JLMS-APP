@@ -152,8 +152,9 @@ def ledger_detail(company_id):
         flash("먼저 데이터를 불러와주세요.")
         return redirect(url_for("dashboard"))
 
-    today = now_kst().strftime("%Y-%m-%d")
-    default_start = (now_kst() - timedelta(days=30)).strftime("%Y-%m-%d")
+    today_kst = now_kst()
+    today = today_kst.strftime("%Y-%m-%d")
+    default_start = today_kst.replace(day=1).strftime("%Y-%m-%d")
     start = request.args.get("start", "").strip() or default_start
     end = request.args.get("end", "").strip() or today
     discount = _parse_discount(request.args.get("discount", ""))
