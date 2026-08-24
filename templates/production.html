@@ -46,29 +46,33 @@
 <div class="card table-scroll">
   <table>
     {% if room == 'hardroom' %}
-    <tr><th>의뢰처</th><th>품목</th><th>품명</th><th class="num">투입</th><th>Oven</th><th class="num">완성</th></tr>
+        <tr><th>의뢰처</th><th>품목</th><th>품명</th><th class="num">투입</th><th class="num">완성</th><th class="num">수율(%)</th></tr>
+
     {% for d in detail %}
     <tr>
       <td>{{ d.company_name or '-' }}</td><td>{{ d.lens_type_name or '-' }}</td><td>{{ d.lens_item_name or '' }}</td>
-      <td class="num">{{ "%.1f"|format(d.input_qty or 0) }}</td><td>{{ d.oven_name or '-' }}</td>
+      <td class="num">{{ "%.1f"|format(d.input_qty or 0) }}</td>
       <td class="num">{{ "%.1f"|format(d.output_qty or 0) }}</td>
+      <td class="num">{{ "%.1f"|format((d.output_qty / d.input_qty * 100) if d.input_qty else 0) }}</td>
     </tr>
     {% endfor %}
     {% elif room == 'coatingroom' %}
-    <tr><th>의뢰처</th><th>품목</th><th>품명</th><th class="num">투입</th><th>호기</th><th class="num">완성</th></tr>
+    <tr><th>의뢰처</th><th>품목</th><th>품명</th><th class="num">투입</th><th class="num">완성</th><th class="num">수율(%)</th></tr>
     {% for d in detail %}
     <tr>
       <td>{{ d.company_name or '-' }}</td><td>{{ d.lens_type_name or '-' }}</td><td>{{ d.lens_item_name or '' }}</td>
-      <td class="num">{{ "%.1f"|format(d.input_qty or 0) }}</td><td>{{ d.machine_name or '-' }}</td>
+      <td class="num">{{ "%.1f"|format(d.input_qty or 0) }}</td>
       <td class="num">{{ "%.1f"|format(d.output_qty or 0) }}</td>
+      <td class="num">{{ "%.1f"|format((d.output_qty / d.input_qty * 100) if d.input_qty else 0) }}</td>
     </tr>
     {% endfor %}
     {% else %}
-    <tr><th>품목</th><th>품명</th><th class="num">투입</th><th class="num">불량</th></tr>
+    <tr><th>품목</th><th>품명</th><th class="num">투입</th><th class="num">불량</th><th class="num">수율(%)</th></tr>
     {% for d in detail %}
     <tr>
       <td>{{ d.lens_type_name or '-' }}</td><td>{{ d.lens_item_name or '' }}</td>
       <td class="num">{{ "%.1f"|format(d.input_qty or 0) }}</td><td class="num">{{ "%.1f"|format(d.defect_qty or 0) }}</td>
+      <td class="num">{{ "%.1f"|format(((d.input_qty - d.defect_qty) / d.input_qty * 100) if d.input_qty else 0) }}</td>
     </tr>
     {% endfor %}
     {% endif %}
