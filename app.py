@@ -6,16 +6,26 @@ from functools import wraps
 
 from flask import Flask, render_template, redirect, url_for, request, session, flash
 
-from s3_db import list_db_backups, download_db_backup
+from s3_db import DB_NAMES, sync_all_dbs
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("VIEWER_SECRET_KEY", "jmo-lms-viewer-dev-key-change-me")
 
 VIEW_PASSWORD = os.environ.get("VIEWER_PASSWORD", "1234")
-DB_PATH = os.path.join(tempfile.gettempdir(), "jmo_lms_viewer.db")
+
+# 기존 통합 lens_manager.db가 역할별 6개 파일로 분리됨. 파일명 = ATTACH 스키마 alias.
+# main.db          -> orders/statements/payments/notices 등 (SQLite 기본 스키마 "main"과 이름이 같아 자연스럽게 매핑됨)
+# company_master.db -> companies/lens_types/process_types/ovens/coating_machines 등
+# hardroom.db / coatingroom.db / rx.db / packing.db -> 각 작업실 로그
+DB_PATHS = {name: os.path.join(tempfile.gettempdir(), f"jmo_{name}.db") for name in DB_NAMES}
 
 # Render 서버는 UTC로 동작하므로, 화면 표시/날짜 기본값은 한국시간(UTC+9) 기준으로 맞춘다.
 KST = timezone(timedelta(hours=9))
+
+DB_LABELS = {
+    "main": "기본(거래/공지)", "company_master": "거래처/렌즈",
+    "hardroom": "하드실", "coatingroom": "코팅실", "rx": "RX작업", "packing": "완제품포장",
+}
 
 
 def now_kst():
@@ -24,19 +34,30 @@ def now_kst():
 
 # ---------------- DB 접근 ----------------
 def get_db():
-    if not os.path.exists(DB_PATH):
+    """6개 DB 파일이 전부 있어야 연결한다. main.db를 기본 커넥션으로 열고 나머지 5개를 ATTACH한다."""
+    if not all(os.path.exists(DB_PATHS[n]) for n in DB_NAMES):
         return None
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATHS["main"])
     conn.row_factory = sqlite3.Row
+    for name in DB_NAMES:
+        if name == "main":
+            continue
+        conn.execute("ATTACH DATABASE ? AS " + name, (DB_PATHS[name],))
     return conn
 
 
-def db_last_synced():
-    if not os.path.exists(DB_PATH):
-        return None
-    mtime = os.path.getmtime(DB_PATH)
-    synced = datetime.fromtimestamp(mtime, tz=timezone.utc).astimezone(KST)
-    return synced.strftime("%Y-%m-%d %H:%M:%S")
+def db_sync_status():
+    """DB 파일별 마지막 동기화 시각(KST). 파일이 없으면 None."""
+    status = {}
+    for name in DB_NAMES:
+        p = DB_PATHS[name]
+        if os.path.exists(p):
+            mtime = os.path.getmtime(p)
+            synced = datetime.fromtimestamp(mtime, tz=timezone.utc).astimezone(KST)
+            status[name] = synced.strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            status[name] = None
+    return status
 
 
 # ---------------- 로그인 보호 ----------------
@@ -72,20 +93,12 @@ def logout():
 @app.route("/sync", methods=["POST"])
 @login_required
 def sync_db():
-    ok, entries = list_db_backups()
-    if not ok:
-        flash(f"서버 목록 조회 실패: {entries}")
-        return redirect(url_for("dashboard"))
-    if not entries:
-        flash("서버에 저장된 백업이 없습니다.")
-        return redirect(url_for("dashboard"))
-
-    latest = entries[0]
-    ok2, msg = download_db_backup(latest["key"], DB_PATH)
-    if ok2:
-        flash("최신 데이터로 업데이트했습니다.")
-    else:
-        flash(f"다운로드 실패: {msg}")
+    all_ok, results = sync_all_dbs(DB_PATHS)
+    failed = [DB_LABELS[name] for name, (ok, _) in results.items() if not ok]
+    if all_ok:
+        flash("6개 DB 모두 최신 데이터로 업데이트했습니다.")
+    elif failed:
+        flash(f"일부 실패: {', '.join(failed)} 동기화에 실패했습니다. (나머지는 갱신됨)")
     return redirect(url_for("dashboard"))
 
 
@@ -93,7 +106,9 @@ def sync_db():
 @app.route("/")
 @login_required
 def dashboard():
-    return render_template("dashboard.html", last_synced=db_last_synced())
+    status = db_sync_status()
+    sync_rows = [{"name": n, "label": DB_LABELS[n], "synced": status[n]} for n in DB_NAMES]
+    return render_template("dashboard.html", sync_rows=sync_rows)
 
 
 # ---------------- 1. 공지사항 ----------------
@@ -104,12 +119,9 @@ def notices():
     if conn is None:
         flash("먼저 데이터를 불러와주세요.")
         return redirect(url_for("dashboard"))
-    rows = conn.execute("SELECT * FROM notices ORDER BY created_at DESC, id DESC").fetchall()
-    work_notes = conn.execute(
-        "SELECT * FROM work_notes ORDER BY created_at DESC, id DESC LIMIT 50"
-    ).fetchall()
+    rows = conn.execute("SELECT * FROM main.notices ORDER BY created_at DESC, id DESC").fetchall()
     conn.close()
-    return render_template("notices.html", notices=rows, work_notes=work_notes)
+    return render_template("notices.html", notices=rows)
 
 
 # ---------------- 2. 거래처 원장 ----------------
@@ -139,7 +151,7 @@ def ledger_company_list():
             kwargs["discount"] = discount_raw
         return redirect(url_for("ledger_detail", **kwargs))
 
-    companies = conn.execute("SELECT id, name FROM companies ORDER BY name").fetchall()
+    companies = conn.execute("SELECT id, name FROM company_master.companies ORDER BY name").fetchall()
     conn.close()
     return render_template("ledger_list.html", companies=companies)
 
@@ -159,7 +171,7 @@ def ledger_detail(company_id):
     end = request.args.get("end", "").strip() or today
     discount = _parse_discount(request.args.get("discount", ""))
 
-    company = conn.execute("SELECT * FROM companies WHERE id=?", (company_id,)).fetchone()
+    company = conn.execute("SELECT * FROM company_master.companies WHERE id=?", (company_id,)).fetchone()
     if company is None:
         conn.close()
         flash("거래처를 찾을 수 없습니다.")
@@ -167,22 +179,22 @@ def ledger_detail(company_id):
 
     # 이월잔액: 조회 시작일 이전까지의 누적 잔액 (할인율은 거래(statement) 금액에만 적용, 조회용 계산이며 DB에는 저장하지 않음)
     prior_statement_raw = conn.execute(
-        "SELECT COALESCE(SUM(total_amount),0) as s FROM statements WHERE company_id=? AND statement_date < ?",
+        "SELECT COALESCE(SUM(total_amount),0) as s FROM main.statements WHERE company_id=? AND statement_date < ?",
         (company_id, start),
     ).fetchone()["s"]
     prior_payment = conn.execute(
-        "SELECT COALESCE(SUM(amount),0) as s FROM payments WHERE company_id=? AND payment_date < ?",
+        "SELECT COALESCE(SUM(amount),0) as s FROM main.payments WHERE company_id=? AND payment_date < ?",
         (company_id, start),
     ).fetchone()["s"]
     opening_balance = prior_statement_raw * (1 - discount / 100) - prior_payment
 
     statements = conn.execute(
         "SELECT statement_date as date, total_amount as amount, 'statement' as kind, id "
-        "FROM statements WHERE company_id=? AND statement_date BETWEEN ? AND ?",
+        "FROM main.statements WHERE company_id=? AND statement_date BETWEEN ? AND ?",
         (company_id, start, end),
     ).fetchall()
     payments = conn.execute(
-        "SELECT payment_date as date, amount, 'payment' as kind, id FROM payments "
+        "SELECT payment_date as date, amount, 'payment' as kind, id FROM main.payments "
         "WHERE company_id=? AND payment_date BETWEEN ? AND ?",
         (company_id, start, end),
     ).fetchall()
@@ -218,10 +230,10 @@ def companies():
     keyword = request.args.get("q", "").strip()
     if keyword:
         rows = conn.execute(
-            "SELECT * FROM companies WHERE name LIKE ? ORDER BY name", (f"%{keyword}%",)
+            "SELECT * FROM company_master.companies WHERE name LIKE ? ORDER BY name", (f"%{keyword}%",)
         ).fetchall()
     else:
-        rows = conn.execute("SELECT * FROM companies ORDER BY name").fetchall()
+        rows = conn.execute("SELECT * FROM company_master.companies ORDER BY name").fetchall()
     conn.close()
     return render_template("companies.html", companies=rows, keyword=keyword)
 
@@ -234,11 +246,11 @@ def lens_types():
     if conn is None:
         flash("먼저 데이터를 불러와주세요.")
         return redirect(url_for("dashboard"))
-    types = conn.execute("SELECT * FROM lens_types ORDER BY name").fetchall()
+    types = conn.execute("SELECT * FROM company_master.lens_types ORDER BY name").fetchall()
     items_by_type = {}
     for t in types:
         items = conn.execute(
-            "SELECT * FROM lens_type_items WHERE lens_type_id=? ORDER BY name", (t["id"],)
+            "SELECT * FROM company_master.lens_type_items WHERE lens_type_id=? ORDER BY name", (t["id"],)
         ).fetchall()
         items_by_type[t["id"]] = items
     conn.close()
@@ -254,7 +266,7 @@ def night_work():
         flash("먼저 데이터를 불러와주세요.")
         return redirect(url_for("dashboard"))
 
-    latest = conn.execute("SELECT MAX(work_date) as d FROM night_work_entries").fetchone()["d"]
+    latest = conn.execute("SELECT MAX(work_date) as d FROM rx.night_work_entries").fetchone()["d"]
     default_date = latest or now_kst().strftime("%Y-%m-%d")
     start = request.args.get("start", "").strip() or default_date
     end = request.args.get("end", "").strip() or default_date
@@ -267,10 +279,10 @@ def night_work():
         query = """
             SELECT ni.*, e.work_date, e.company_id, c.name as company_name,
                    pt.name as process_type_name
-            FROM night_work_items ni
-            JOIN night_work_entries e ON ni.entry_id = e.id
-            LEFT JOIN companies c ON e.company_id = c.id
-            LEFT JOIN process_types pt ON ni.process_type_id = pt.id
+            FROM rx.night_work_items ni
+            JOIN rx.night_work_entries e ON ni.entry_id = e.id
+            LEFT JOIN company_master.companies c ON e.company_id = c.id
+            LEFT JOIN company_master.process_types pt ON ni.process_type_id = pt.id
             WHERE e.work_date BETWEEN ? AND ?
             ORDER BY c.name, ni.id
         """
@@ -342,11 +354,11 @@ def production():
     end = request.args.get("end", "").strip()
 
     if room == "coatingroom":
-        table, has_output = "coatingroom_logs", True
+        table, has_output = "coatingroom.coatingroom_logs", True
     elif room == "packing":
-        table, has_output = "packing_logs", False
+        table, has_output = "packing.packing_logs", False
     else:
-        room, table, has_output = "hardroom", "hardroom_logs", True
+        room, table, has_output = "hardroom", "hardroom.hardroom_logs", True
 
     where_clause = ""
     params = ()
@@ -375,36 +387,36 @@ def production():
 
     detail = None
     if date_filter:
-        if table == "hardroom_logs":
+        if room == "hardroom":
             detail = conn.execute(
                 """SELECT hl.*, c.name as company_name, lt.name as lens_type_name, lti.name as lens_item_name,
                           ov.name as oven_name
-                   FROM hardroom_logs hl
-                   LEFT JOIN companies c ON hl.company_id=c.id
-                   LEFT JOIN lens_types lt ON hl.lens_type_id=lt.id
-                   LEFT JOIN lens_type_items lti ON hl.lens_type_item_id=lti.id
-                   LEFT JOIN ovens ov ON hl.oven_id=ov.id
+                   FROM hardroom.hardroom_logs hl
+                   LEFT JOIN company_master.companies c ON hl.company_id=c.id
+                   LEFT JOIN company_master.lens_types lt ON hl.lens_type_id=lt.id
+                   LEFT JOIN company_master.lens_type_items lti ON hl.lens_type_item_id=lti.id
+                   LEFT JOIN company_master.ovens ov ON hl.oven_id=ov.id
                    WHERE hl.work_date=? ORDER BY hl.id""",
                 (date_filter,),
             ).fetchall()
-        elif table == "coatingroom_logs":
+        elif room == "coatingroom":
             detail = conn.execute(
                 """SELECT cl.*, c.name as company_name, lt.name as lens_type_name, lti.name as lens_item_name,
                           cm.name as machine_name
-                   FROM coatingroom_logs cl
-                   LEFT JOIN companies c ON cl.company_id=c.id
-                   LEFT JOIN lens_types lt ON cl.lens_type_id=lt.id
-                   LEFT JOIN lens_type_items lti ON cl.lens_type_item_id=lti.id
-                   LEFT JOIN coating_machines cm ON cl.machine_id=cm.id
+                   FROM coatingroom.coatingroom_logs cl
+                   LEFT JOIN company_master.companies c ON cl.company_id=c.id
+                   LEFT JOIN company_master.lens_types lt ON cl.lens_type_id=lt.id
+                   LEFT JOIN company_master.lens_type_items lti ON cl.lens_type_item_id=lti.id
+                   LEFT JOIN company_master.coating_machines cm ON cl.machine_id=cm.id
                    WHERE cl.work_date=? ORDER BY cl.id""",
                 (date_filter,),
             ).fetchall()
         else:
             detail = conn.execute(
                 """SELECT pl.*, lt.name as lens_type_name, lti.name as lens_item_name
-                   FROM packing_logs pl
-                   LEFT JOIN lens_types lt ON pl.lens_type_id=lt.id
-                   LEFT JOIN lens_type_items lti ON pl.lens_type_item_id=lti.id
+                   FROM packing.packing_logs pl
+                   LEFT JOIN company_master.lens_types lt ON pl.lens_type_id=lt.id
+                   LEFT JOIN company_master.lens_type_items lti ON pl.lens_type_item_id=lti.id
                    WHERE pl.work_date=? ORDER BY pl.id""",
                 (date_filter,),
             ).fetchall()
@@ -428,7 +440,11 @@ def production_history():
     room = request.args.get("room", "hardroom")
     if room not in ("hardroom", "coatingroom", "packing"):
         room = "hardroom"
-    table = {"hardroom": "hardroom_logs", "coatingroom": "coatingroom_logs", "packing": "packing_logs"}[room]
+    table = {
+        "hardroom": "hardroom.hardroom_logs",
+        "coatingroom": "coatingroom.coatingroom_logs",
+        "packing": "packing.packing_logs",
+    }[room]
     has_output = room in ("hardroom", "coatingroom")
 
     today = now_kst().strftime("%Y-%m-%d")
@@ -436,11 +452,11 @@ def production_history():
     start = request.args.get("start", "").strip() or default_start
     end = request.args.get("end", "").strip() or today
 
-    lens_types = conn.execute("SELECT id, name FROM lens_types ORDER BY name").fetchall()
+    lens_types = conn.execute("SELECT id, name FROM company_master.lens_types ORDER BY name").fetchall()
     lens_type_id = request.args.get("lens_type_id", "").strip()
     lens_type_name = "전체"
     if lens_type_id:
-        lt = conn.execute("SELECT name FROM lens_types WHERE id=?", (lens_type_id,)).fetchone()
+        lt = conn.execute("SELECT name FROM company_master.lens_types WHERE id=?", (lens_type_id,)).fetchone()
         lens_type_name = lt["name"] if lt else "전체"
 
     where = "work_date BETWEEN ? AND ?"
@@ -462,7 +478,7 @@ def production_history():
                        COALESCE(SUM(t.input_qty),0) as input_sum, COALESCE(SUM(t.output_qty),0) as output_sum,
                        COALESCE(SUM(t.defect_qty),0) as defect_sum
                 FROM {table} t
-                LEFT JOIN lens_types lt ON t.lens_type_id = lt.id
+                LEFT JOIN company_master.lens_types lt ON t.lens_type_id = lt.id
                 WHERE {where}
                 GROUP BY t.lens_type_id ORDER BY input_sum DESC""",
             params,
@@ -478,7 +494,7 @@ def production_history():
             f"""SELECT lt.id as lens_type_id, lt.name, COUNT(*) as cnt,
                        COALESCE(SUM(t.input_qty),0) as input_sum, COALESCE(SUM(t.defect_qty),0) as defect_sum
                 FROM {table} t
-                LEFT JOIN lens_types lt ON t.lens_type_id = lt.id
+                LEFT JOIN company_master.lens_types lt ON t.lens_type_id = lt.id
                 WHERE {where}
                 GROUP BY t.lens_type_id ORDER BY input_sum DESC""",
             params,
