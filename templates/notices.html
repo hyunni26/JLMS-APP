@@ -13,22 +13,4 @@
   <div class="content-box" style="margin-top:8px;">{{ n.content }}</div>
 </div>
 {% endfor %}
-
-<h1 style="margin-top:24px;">작업 중 특이사항 (인수인계)</h1>
-{% if not work_notes %}
-<div class="card empty">등록된 특이사항이 없습니다.</div>
-{% else %}
-<div class="card table-scroll">
-  <table>
-    <tr><th>작성일시</th><th>작성자</th><th>내용</th></tr>
-    {% for w in work_notes %}
-    <tr>
-      <td style="white-space:nowrap;">{{ w.created_at }}</td>
-      <td>{{ w.author or '-' }}</td>
-      <td>{{ w.content }}</td>
-    </tr>
-    {% endfor %}
-  </table>
-</div>
-{% endif %}
 {% endblock %}
