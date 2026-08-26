@@ -16,6 +16,9 @@
     <input type="number" name="discount" step="0.1" min="0" max="100" placeholder="할인율(%)"
            value="{{ discount if discount else '' }}" style="width:100px;">
     <button type="submit" class="btn ghost">조회</button>
+    {% if discount %}
+    <a href="{{ url_for('ledger_detail', company_id=company.id, start=start, end=end) }}" class="btn ghost">초기화</a>
+    {% endif %}
   </form>
 </div>
 
