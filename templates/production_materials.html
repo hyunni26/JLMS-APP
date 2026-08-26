@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="breadcrumb"><a href="{{ url_for('dashboard') }}">← 목록</a></div>
+<h1>생산 작업 현황</h1>
+
+<div class="tabs">
+  <a href="{{ url_for('production', room='hardroom') }}">하드실</a>
+  <a href="{{ url_for('production', room='coatingroom') }}">코팅실</a>
+  <a href="{{ url_for('production', room='packing') }}">완제품포장</a>
+  <a href="{{ url_for('supplier_materials') }}" class="active">생지관리</a>
+</div>
+
+<div class="card">
+  <form method="get" class="filter-row">
+    <select name="supplier_id" style="flex:1; min-width:110px;">
+      <option value="">전체 매입처</option>
+      {% for s in suppliers %}
+      <option value="{{ s.id }}" {{ "selected" if supplier_id|string == s.id|string }}>{{ s.name }}</option>
+      {% endfor %}
+    </select>
+    <select name="lens_type_id" style="flex:1; min-width:110px;">
+      <option value="">전체 렌즈종류</option>
+      {% for lt in lens_types %}
+      <option value="{{ lt.id }}" {{ "selected" if lens_type_id|string == lt.id|string }}>{{ lt.name }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn ghost">조회</button>
+  </form>
+</div>
+
+<div class="card table-scroll">
+  <table>
+    <tr>
+      <th>생지매입처</th><th>렌즈종류</th>
+      <th class="num">매입량</th><th class="num">하드실투입량</th>
+      <th class="num">완성품</th><th class="num">불량</th><th class="num">수율(%)</th>
+    </tr>
+    {% for r in rows %}
+    <tr>
+      <td>{{ r.supplier_name }}</td>
+      <td>{{ r.lens_type_name }}</td>
+      <td class="num">{{ "%.1f"|format(r.purchased) }}</td>
+      <td class="num">{{ "%.1f"|format(r.input) }}</td>
+      <td class="num">{{ "%.1f"|format(r.output) }}</td>
+      <td class="num">{{ "%.1f"|format(r.defect) }}</td>
+      <td class="num">{{ "%.1f"|format(r.yield_pct) }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7" class="empty">해당 조건의 데이터가 없습니다.</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}
