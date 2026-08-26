@@ -1,22 +1,25 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="card">
-  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-    <div style="font-size:13px; color:var(--text-light); font-weight:600;">DB별 마지막 동기화</div>
+  <div style="display:flex; justify-content:space-between; align-items:center;">
+    <div>
+      <div style="font-size:13px; color:var(--text-light);">데이터 상태</div>
+      {% if all_synced %}
+      <div style="font-weight:600;">6종 데이터 불러오기 완료</div>
+      <div style="font-size:12px; color:var(--text-light); margin-top:2px;">{{ last_synced }} 기준</div>
+      {% else %}
+      <div style="font-weight:600;">아직 불러온 데이터 없음</div>
+      {% endif %}
+    </div>
     <form method="post" action="{{ url_for('sync_db') }}" id="syncForm" onsubmit="return startSync()">
       <button type="submit" class="btn" id="syncBtn">지금 새로고침</button>
     </form>
   </div>
-  <table style="width:100%; font-size:13px;">
-    {% for r in sync_rows %}
-    <tr>
-      <td style="padding:4px 0; color:var(--text-light);">{{ r.label }}</td>
-      <td style="padding:4px 0; text-align:right; font-weight:600;">
-        {{ r.synced or "아직 불러온 데이터 없음" }}
-      </td>
-    </tr>
-    {% endfor %}
-  </table>
+  {% if missing %}
+  <div style="margin-top:10px; padding-top:10px; border-top:1px solid var(--border); font-size:12px; color:#b23b3b;">
+    불러오지 못한 항목: {{ missing|join(', ') }}
+  </div>
+  {% endif %}
 </div>
 
 <div id="syncOverlay" style="display:none; position:fixed; inset:0; background:rgba(27,42,74,0.55);
