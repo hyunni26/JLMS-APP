@@ -220,6 +220,13 @@ def ledger_detail(company_id):
 
 
 # ---------------- 2-1. 거래처 전체 미수금 현황 ----------------
+def _safe_float(v, default=0.0):
+    try:
+        return float(v) if v is not None else default
+    except (TypeError, ValueError):
+        return default
+
+
 @app.route("/receivables")
 @login_required
 def receivables():
@@ -234,80 +241,90 @@ def receivables():
     start = request.args.get("start", "").strip() or default_start
     end = request.args.get("end", "").strip() or today
 
-    companies_rows = conn.execute(
-        "SELECT id, name, discount_rate FROM company_master.companies ORDER BY name"
-    ).fetchall()
+    try:
+        companies_rows = conn.execute(
+            "SELECT id, name, discount_rate FROM company_master.companies ORDER BY name"
+        ).fetchall()
 
-    # 전미수금 구성요소: 조회 시작일 이전의 명세서 합계 / 입금 합계 (거래처별)
-    prior_statements = {
-        r["company_id"]: r["s"] for r in conn.execute(
-            "SELECT company_id, COALESCE(SUM(total_amount),0) as s FROM main.statements "
-            "WHERE statement_date < ? GROUP BY company_id",
-            (start,),
-        ).fetchall()
-    }
-    prior_payments = {
-        r["company_id"]: r["s"] for r in conn.execute(
-            "SELECT company_id, COALESCE(SUM(amount),0) as s FROM main.payments "
-            "WHERE payment_date < ? GROUP BY company_id",
-            (start,),
-        ).fetchall()
-    }
+        # 전미수금 구성요소: 조회 시작일 이전의 명세서 합계 / 입금 합계 (거래처별)
+        prior_statements = {
+            r["company_id"]: r["s"] for r in conn.execute(
+                "SELECT company_id, COALESCE(SUM(total_amount),0) as s FROM main.statements "
+                "WHERE statement_date < ? GROUP BY company_id",
+                (start,),
+            ).fetchall()
+        }
+        prior_payments = {
+            r["company_id"]: r["s"] for r in conn.execute(
+                "SELECT company_id, COALESCE(SUM(amount),0) as s FROM main.payments "
+                "WHERE payment_date < ? GROUP BY company_id",
+                (start,),
+            ).fetchall()
+        }
 
-    # 기간 내 매출/반품: statement_items.amount 부호로 구분 (양수=매출, 음수=반품)
-    period_sales_returns = {
-        r["company_id"]: (r["sales"], r["returns"]) for r in conn.execute(
-            """SELECT s.company_id,
-                      COALESCE(SUM(CASE WHEN si.amount > 0 THEN si.amount ELSE 0 END),0) as sales,
-                      COALESCE(SUM(CASE WHEN si.amount < 0 THEN -si.amount ELSE 0 END),0) as returns
-               FROM main.statement_items si
-               JOIN main.statements s ON si.statement_id = s.id
-               WHERE s.statement_date BETWEEN ? AND ?
-               GROUP BY s.company_id""",
-            (start, end),
-        ).fetchall()
-    }
+        # 기간 내 매출/반품: statement_items.amount 부호로 구분 (양수=매출, 음수=반품)
+        period_sales_returns = {
+            r["company_id"]: (r["sales"], r["returns"]) for r in conn.execute(
+                """SELECT s.company_id,
+                          COALESCE(SUM(CASE WHEN si.amount > 0 THEN si.amount ELSE 0 END),0) as sales,
+                          COALESCE(SUM(CASE WHEN si.amount < 0 THEN -si.amount ELSE 0 END),0) as returns
+                   FROM main.statement_items si
+                   JOIN main.statements s ON si.statement_id = s.id
+                   WHERE s.statement_date BETWEEN ? AND ?
+                   GROUP BY s.company_id""",
+                (start, end),
+            ).fetchall()
+        }
 
-    # 기간 내 입금
-    period_payments = {
-        r["company_id"]: r["s"] for r in conn.execute(
-            "SELECT company_id, COALESCE(SUM(amount),0) as s FROM main.payments "
-            "WHERE payment_date BETWEEN ? AND ? GROUP BY company_id",
-            (start, end),
-        ).fetchall()
-    }
+        # 기간 내 입금
+        period_payments = {
+            r["company_id"]: r["s"] for r in conn.execute(
+                "SELECT company_id, COALESCE(SUM(amount),0) as s FROM main.payments "
+                "WHERE payment_date BETWEEN ? AND ? GROUP BY company_id",
+                (start, end),
+            ).fetchall()
+        }
+    except sqlite3.Error as e:
+        conn.close()
+        flash(f"미수금 현황 조회 실패 (DB 오류): {e}")
+        return redirect(url_for("dashboard"))
     conn.close()
 
-    rows = []
-    totals = {"prior": 0, "sales": 0, "returns": 0, "payment": 0, "discount": 0, "carry": 0, "net_sales": 0}
-    for c in companies_rows:
-        cid = c["id"]
-        rate = c["discount_rate"] or 0
-        prior_payment_sum = prior_payments.get(cid, 0)
-        opening_balance = prior_statements.get(cid, 0) - prior_payment_sum - prior_payment_sum * rate / 100
+    try:
+        rows = []
+        totals = {"prior": 0, "sales": 0, "returns": 0, "payment": 0, "discount": 0, "carry": 0, "net_sales": 0}
+        for c in companies_rows:
+            cid = c["id"]
+            rate = _safe_float(c["discount_rate"])
+            prior_payment_sum = _safe_float(prior_payments.get(cid, 0))
+            opening_balance = _safe_float(prior_statements.get(cid, 0)) - prior_payment_sum - prior_payment_sum * rate / 100
 
-        sales, returns = period_sales_returns.get(cid, (0, 0))
-        payment = period_payments.get(cid, 0)
-        discount = payment * rate / 100
-        net_sales = sales - returns
-        carry = opening_balance + sales - returns - payment - discount
+            s_raw, r_raw = period_sales_returns.get(cid, (0, 0))
+            sales, returns = _safe_float(s_raw), _safe_float(r_raw)
+            payment = _safe_float(period_payments.get(cid, 0))
+            discount = payment * rate / 100
+            net_sales = sales - returns
+            carry = opening_balance + sales - returns - payment - discount
 
-        # 전미수금/매출/반품/입금 전부 0인 거래처는 표에서 제외 (기간 내 무거래 + 이월잔액 없음)
-        if opening_balance == 0 and sales == 0 and returns == 0 and payment == 0:
-            continue
+            # 전미수금/매출/반품/입금 전부 0인 거래처는 표에서 제외 (기간 내 무거래 + 이월잔액 없음)
+            if opening_balance == 0 and sales == 0 and returns == 0 and payment == 0:
+                continue
 
-        rows.append({
-            "id": cid, "name": c["name"], "prior": opening_balance,
-            "sales": sales, "returns": returns, "payment": payment,
-            "discount": discount, "carry": carry, "net_sales": net_sales,
-        })
-        totals["prior"] += opening_balance
-        totals["sales"] += sales
-        totals["returns"] += returns
-        totals["payment"] += payment
-        totals["discount"] += discount
-        totals["carry"] += carry
-        totals["net_sales"] += net_sales
+            rows.append({
+                "id": cid, "name": c["name"], "prior": opening_balance,
+                "sales": sales, "returns": returns, "payment": payment,
+                "discount": discount, "carry": carry, "net_sales": net_sales,
+            })
+            totals["prior"] += opening_balance
+            totals["sales"] += sales
+            totals["returns"] += returns
+            totals["payment"] += payment
+            totals["discount"] += discount
+            totals["carry"] += carry
+            totals["net_sales"] += net_sales
+    except Exception as e:
+        flash(f"미수금 현황 계산 중 오류가 발생했습니다: {e}")
+        return redirect(url_for("dashboard"))
 
     return render_template(
         "receivables.html", rows=rows, totals=totals, start=start, end=end,
