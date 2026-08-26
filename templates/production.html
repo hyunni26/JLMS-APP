@@ -46,8 +46,7 @@
 <div class="card table-scroll">
   <table>
     {% if room == 'hardroom' %}
-        <tr><th>의뢰처</th><th>품목</th><th>품명</th><th class="num">투입</th><th class="num">완성</th><th class="num">수율(%)</th></tr>
-
+    <tr><th>매입처</th><th>품목</th><th>품명</th><th class="num">투입</th><th class="num">완성</th><th class="num">수율(%)</th></tr>
     {% for d in detail %}
     <tr>
       <td>{{ d.company_name or '-' }}</td><td>{{ d.lens_type_name or '-' }}</td><td>{{ d.lens_item_name or '' }}</td>
@@ -57,7 +56,7 @@
     </tr>
     {% endfor %}
     {% elif room == 'coatingroom' %}
-    <tr><th>의뢰처</th><th>품목</th><th>품명</th><th class="num">투입</th><th class="num">완성</th><th class="num">수율(%)</th></tr>
+    <tr><th>매입처</th><th>품목</th><th>품명</th><th class="num">투입</th><th class="num">완성</th><th class="num">수율(%)</th></tr>
     {% for d in detail %}
     <tr>
       <td>{{ d.company_name or '-' }}</td><td>{{ d.lens_type_name or '-' }}</td><td>{{ d.lens_item_name or '' }}</td>
