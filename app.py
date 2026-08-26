@@ -507,7 +507,7 @@ def production():
                 """SELECT hl.*, c.name as company_name, lt.name as lens_type_name, lti.name as lens_item_name,
                           ov.name as oven_name
                    FROM hardroom.hardroom_logs hl
-                   LEFT JOIN company_master.companies c ON hl.company_id=c.id
+                   LEFT JOIN company_master.supplier_companies c ON hl.company_id=c.id
                    LEFT JOIN company_master.lens_types lt ON hl.lens_type_id=lt.id
                    LEFT JOIN company_master.lens_type_items lti ON hl.lens_type_item_id=lti.id
                    LEFT JOIN company_master.ovens ov ON hl.oven_id=ov.id
@@ -519,7 +519,7 @@ def production():
                 """SELECT cl.*, c.name as company_name, lt.name as lens_type_name, lti.name as lens_item_name,
                           cm.name as machine_name
                    FROM coatingroom.coatingroom_logs cl
-                   LEFT JOIN company_master.companies c ON cl.company_id=c.id
+                   LEFT JOIN company_master.supplier_companies c ON cl.company_id=c.id
                    LEFT JOIN company_master.lens_types lt ON cl.lens_type_id=lt.id
                    LEFT JOIN company_master.lens_type_items lti ON cl.lens_type_item_id=lti.id
                    LEFT JOIN company_master.coating_machines cm ON cl.machine_id=cm.id
