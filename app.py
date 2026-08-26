@@ -107,8 +107,12 @@ def sync_db():
 @login_required
 def dashboard():
     status = db_sync_status()
-    sync_rows = [{"name": n, "label": DB_LABELS[n], "synced": status[n]} for n in DB_NAMES]
-    return render_template("dashboard.html", sync_rows=sync_rows)
+    missing = [DB_LABELS[n] for n in DB_NAMES if not status[n]]
+    all_synced = not missing
+    last_synced = max((status[n] for n in DB_NAMES if status[n]), default=None)
+    return render_template(
+        "dashboard.html", all_synced=all_synced, last_synced=last_synced, missing=missing,
+    )
 
 
 # ---------------- 1. 공지사항 ----------------
