@@ -1,8 +1,8 @@
-const CACHE_NAME = "jmo-lms-viewer-v1";
+const CACHE_NAME = "jmo-lms-viewer-v2";
 const OFFLINE_ASSETS = [
   "/static/manifest.json",
-  "/static/icons/icon-192.png",
-  "/static/icons/icon-512.png",
+  "/static/icons/icon-192.png?v=2",
+  "/static/icons/icon-512.png?v=2",
 ];
 
 self.addEventListener("install", (event) => {
