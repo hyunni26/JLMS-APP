@@ -230,18 +230,19 @@ def _safe_float(v, default=0.0):
 @app.route("/receivables")
 @login_required
 def receivables():
-    conn = get_db()
-    if conn is None:
-        flash("먼저 데이터를 불러와주세요.")
-        return redirect(url_for("dashboard"))
-
     today_kst = now_kst()
     today = today_kst.strftime("%Y-%m-%d")
     default_start = today_kst.replace(day=1).strftime("%Y-%m-%d")
     start = request.args.get("start", "").strip() or default_start
     end = request.args.get("end", "").strip() or today
 
+    conn = None
     try:
+        conn = get_db()
+        if conn is None:
+            flash("먼저 데이터를 불러와주세요.")
+            return redirect(url_for("dashboard"))
+
         companies_rows = conn.execute(
             "SELECT id, name, discount_rate FROM company_master.companies ORDER BY name"
         ).fetchall()
@@ -284,13 +285,7 @@ def receivables():
                 (start, end),
             ).fetchall()
         }
-    except sqlite3.Error as e:
-        conn.close()
-        flash(f"미수금 현황 조회 실패 (DB 오류): {e}")
-        return redirect(url_for("dashboard"))
-    conn.close()
 
-    try:
         rows = []
         totals = {"prior": 0, "sales": 0, "returns": 0, "payment": 0, "discount": 0, "carry": 0, "net_sales": 0}
         for c in companies_rows:
@@ -322,13 +317,17 @@ def receivables():
             totals["discount"] += discount
             totals["carry"] += carry
             totals["net_sales"] += net_sales
-    except Exception as e:
-        flash(f"미수금 현황 계산 중 오류가 발생했습니다: {e}")
-        return redirect(url_for("dashboard"))
 
-    return render_template(
-        "receivables.html", rows=rows, totals=totals, start=start, end=end,
-    )
+        return render_template(
+            "receivables.html", rows=rows, totals=totals, start=start, end=end,
+        )
+    except Exception as e:
+        app.logger.exception("receivables 처리 중 오류")
+        flash(f"미수금 현황 조회 중 오류가 발생했습니다: {type(e).__name__}: {e}")
+        return redirect(url_for("dashboard"))
+    finally:
+        if conn is not None:
+            conn.close()
 
 
 # ---------------- 3. 거래처 관리 (보기 전용) ----------------
