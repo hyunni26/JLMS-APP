@@ -7,6 +7,7 @@
   <a href="{{ url_for('production', room='hardroom') }}" class="{{ 'active' if room=='hardroom' }}">하드실</a>
   <a href="{{ url_for('production', room='coatingroom') }}" class="{{ 'active' if room=='coatingroom' }}">코팅실</a>
   <a href="{{ url_for('production', room='packing') }}" class="{{ 'active' if room=='packing' }}">완제품포장</a>
+  <a href="{{ url_for('supplier_materials') }}">생지관리</a>
 </div>
 <div class="breadcrumb" style="text-align:right; margin-top:-6px;">
   <a href="{{ url_for('production_history', room=room) }}">📊 기간별 생산 이력 보기 →</a>
