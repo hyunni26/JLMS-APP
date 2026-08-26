@@ -543,6 +543,94 @@ def production():
     )
 
 
+# ---------------- 6-0. 거래처별 생지관리 (매입 vs 하드실 생산 비교) ----------------
+@app.route("/production/materials")
+@login_required
+def supplier_materials():
+    conn = get_db()
+    if conn is None:
+        flash("먼저 데이터를 불러와주세요.")
+        return redirect(url_for("dashboard"))
+
+    supplier_id = request.args.get("supplier_id", "").strip()
+    lens_type_id = request.args.get("lens_type_id", "").strip()
+
+    suppliers = conn.execute(
+        "SELECT id, name FROM company_master.supplier_companies ORDER BY name"
+    ).fetchall()
+    lens_types = conn.execute(
+        "SELECT id, name FROM company_master.lens_types ORDER BY name"
+    ).fetchall()
+    supplier_names = {r["id"]: r["name"] for r in suppliers}
+    lens_type_names = {r["id"]: r["name"] for r in lens_types}
+
+    purchase_where, purchase_params = [], []
+    if supplier_id:
+        purchase_where.append("p.company_id = ?")
+        purchase_params.append(supplier_id)
+    if lens_type_id:
+        purchase_where.append("pl.lens_type_id = ?")
+        purchase_params.append(lens_type_id)
+    purchase_where_sql = ("WHERE " + " AND ".join(purchase_where)) if purchase_where else ""
+
+    purchased_rows = conn.execute(
+        f"""SELECT p.company_id, pl.lens_type_id, SUM(pl.quantity) as qty
+            FROM main.purchase_lines pl
+            JOIN main.purchases p ON pl.purchase_id = p.id
+            {purchase_where_sql}
+            GROUP BY p.company_id, pl.lens_type_id""",
+        purchase_params,
+    ).fetchall()
+
+    hr_where, hr_params = [], []
+    if supplier_id:
+        hr_where.append("company_id = ?")
+        hr_params.append(supplier_id)
+    if lens_type_id:
+        hr_where.append("lens_type_id = ?")
+        hr_params.append(lens_type_id)
+    hr_where_sql = ("WHERE " + " AND ".join(hr_where)) if hr_where else ""
+
+    hardroom_rows = conn.execute(
+        f"""SELECT company_id, lens_type_id,
+                   SUM(input_qty) as input_sum, SUM(output_qty) as output_sum, SUM(defect_qty) as defect_sum
+            FROM hardroom.hardroom_logs
+            {hr_where_sql}
+            GROUP BY company_id, lens_type_id""",
+        hr_params,
+    ).fetchall()
+    conn.close()
+
+    # (매입처, 렌즈종류) 키로 매입 실적과 하드실 생산 실적을 합침 (한쪽만 있어도 0으로 채워서 표시)
+    data = {}
+    for r in purchased_rows:
+        key = (r["company_id"], r["lens_type_id"])
+        data.setdefault(key, {"purchased": 0, "input": 0, "output": 0, "defect": 0})
+        data[key]["purchased"] = r["qty"] or 0
+    for r in hardroom_rows:
+        key = (r["company_id"], r["lens_type_id"])
+        data.setdefault(key, {"purchased": 0, "input": 0, "output": 0, "defect": 0})
+        data[key]["input"] = r["input_sum"] or 0
+        data[key]["output"] = r["output_sum"] or 0
+        data[key]["defect"] = r["defect_sum"] or 0
+
+    rows = []
+    for (cid, ltid), v in data.items():
+        yield_pct = (v["output"] / v["input"] * 100) if v["input"] else 0
+        rows.append({
+            "supplier_name": supplier_names.get(cid, "(미지정)"),
+            "lens_type_name": lens_type_names.get(ltid, "(미지정)"),
+            "purchased": v["purchased"], "input": v["input"],
+            "output": v["output"], "defect": v["defect"], "yield_pct": yield_pct,
+        })
+    rows.sort(key=lambda r: (r["supplier_name"], r["lens_type_name"]))
+
+    return render_template(
+        "production_materials.html", rows=rows, suppliers=suppliers, lens_types=lens_types,
+        supplier_id=supplier_id, lens_type_id=lens_type_id,
+    )
+
+
 # ---------------- 6-1. 생산 이력 (기간 + 품목 집계) ----------------
 @app.route("/production/history")
 @login_required
