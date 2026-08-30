@@ -439,19 +439,36 @@ def night_work():
             start=start, end=end, view=view,
         )
 
-    # 거래처별: 같은 거래처가 이어지는 구간만큼 rowspan 계산 + 거래처 총합계
+    # 거래처별: 같은 거래처+처리종류 조합이 기간 내 여러 날짜에 걸쳐 있으면 하나로 합산
+    grouped = {}
+    order = []
+    for d in processed:
+        key = (d["company_name"], d["process_type_name"])
+        if key not in grouped:
+            grouped[key] = {
+                "company_name": d["company_name"], "process_type_name": d["process_type_name"],
+                "work_qty": 0, "cut_qty": 0, "rework_qty": 0, "total_qty": 0,
+            }
+            order.append(key)
+        grouped[key]["work_qty"] += d["work_qty"] or 0
+        grouped[key]["cut_qty"] += d["cut_qty"] or 0
+        grouped[key]["rework_qty"] += d["rework_qty"] or 0
+        grouped[key]["total_qty"] += d["total_qty"]
+    merged = [grouped[k] for k in order]
+
+    # 같은 거래처가 이어지는 구간만큼 rowspan 계산 + 거래처 총합계
     i = 0
-    while i < len(processed):
+    while i < len(merged):
         j = i
-        while j < len(processed) and processed[j]["company_name"] == processed[i]["company_name"]:
+        while j < len(merged) and merged[j]["company_name"] == merged[i]["company_name"]:
             j += 1
-        processed[i]["company_rowspan"] = j - i
-        processed[i]["company_total"] = sum(processed[k]["total_qty"] for k in range(i, j))
+        merged[i]["company_rowspan"] = j - i
+        merged[i]["company_total"] = sum(merged[k]["total_qty"] for k in range(i, j))
         for k in range(i + 1, j):
-            processed[k]["company_rowspan"] = 0
+            merged[k]["company_rowspan"] = 0
         i = j
 
-    return render_template("night_work.html", rows=processed, start=start, end=end, view=view)
+    return render_template("night_work.html", rows=merged, start=start, end=end, view=view)
 
 
 # ---------------- 6. 생산 작업 현황 (하드실/코팅실/완제품포장) ----------------
