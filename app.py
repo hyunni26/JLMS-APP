@@ -410,6 +410,9 @@ def night_work():
         d["total_qty"] = (d["work_qty"] or 0) + (d["cut_qty"] or 0) + (d["rework_qty"] or 0)
         processed.append(d)
 
+    def _rework_ratio(rework_qty, total_qty):
+        return (rework_qty / total_qty * 100) if total_qty else 0
+
     if view == "total":
         # 거래처 구분 없이 처리종류별로만 합산 (작업/컷팅/재작업 각각 별도 합계)
         totals = {}
@@ -427,6 +430,8 @@ def night_work():
             totals[key]["rework_qty"] += d["rework_qty"] or 0
             totals[key]["total_qty"] += d["total_qty"]
         result_rows = [totals[k] for k in order]
+        for t in result_rows:
+            t["rework_ratio"] = _rework_ratio(t["rework_qty"], t["total_qty"])
         grand_total = {
             "process_type_name": "합계",
             "work_qty": sum(t["work_qty"] for t in result_rows),
@@ -434,6 +439,7 @@ def night_work():
             "rework_qty": sum(t["rework_qty"] for t in result_rows),
             "total_qty": sum(t["total_qty"] for t in result_rows),
         }
+        grand_total["rework_ratio"] = _rework_ratio(grand_total["rework_qty"], grand_total["total_qty"])
         return render_template(
             "night_work.html", rows=result_rows, grand_total=grand_total,
             start=start, end=end, view=view,
@@ -455,6 +461,8 @@ def night_work():
         grouped[key]["rework_qty"] += d["rework_qty"] or 0
         grouped[key]["total_qty"] += d["total_qty"]
     merged = [grouped[k] for k in order]
+    for m in merged:
+        m["rework_ratio"] = _rework_ratio(m["rework_qty"], m["total_qty"])
 
     # 같은 거래처가 이어지는 구간만큼 rowspan 계산 + 거래처 총합계
     i = 0
@@ -578,8 +586,12 @@ def supplier_materials():
     lens_types = conn.execute(
         "SELECT id, name FROM company_master.lens_types ORDER BY name"
     ).fetchall()
+    lens_type_items = conn.execute(
+        "SELECT id, lens_type_id, name FROM company_master.lens_type_items"
+    ).fetchall()
     supplier_names = {r["id"]: r["name"] for r in suppliers}
     lens_type_names = {r["id"]: r["name"] for r in lens_types}
+    lens_item_names = {r["id"]: r["name"] for r in lens_type_items}
 
     purchase_where, purchase_params = [], []
     if supplier_id:
@@ -591,11 +603,11 @@ def supplier_materials():
     purchase_where_sql = ("WHERE " + " AND ".join(purchase_where)) if purchase_where else ""
 
     purchased_rows = conn.execute(
-        f"""SELECT p.company_id, pl.lens_type_id, SUM(pl.quantity) as qty
+        f"""SELECT p.company_id, pl.lens_type_id, pl.lens_type_item_id, SUM(pl.quantity) as qty
             FROM main.purchase_lines pl
             JOIN main.purchases p ON pl.purchase_id = p.id
             {purchase_where_sql}
-            GROUP BY p.company_id, pl.lens_type_id""",
+            GROUP BY p.company_id, pl.lens_type_id, pl.lens_type_item_id""",
         purchase_params,
     ).fetchall()
 
@@ -609,38 +621,39 @@ def supplier_materials():
     hr_where_sql = ("WHERE " + " AND ".join(hr_where)) if hr_where else ""
 
     hardroom_rows = conn.execute(
-        f"""SELECT company_id, lens_type_id,
+        f"""SELECT company_id, lens_type_id, lens_type_item_id,
                    SUM(input_qty) as input_sum, SUM(output_qty) as output_sum, SUM(defect_qty) as defect_sum
             FROM hardroom.hardroom_logs
             {hr_where_sql}
-            GROUP BY company_id, lens_type_id""",
+            GROUP BY company_id, lens_type_id, lens_type_item_id""",
         hr_params,
     ).fetchall()
     conn.close()
 
-    # (매입처, 렌즈종류) 키로 매입 실적과 하드실 생산 실적을 합침 (한쪽만 있어도 0으로 채워서 표시)
+    # (매입처, 렌즈종류, 품명) 키로 매입 실적과 하드실 생산 실적을 합침 (한쪽만 있어도 0으로 채워서 표시)
     data = {}
     for r in purchased_rows:
-        key = (r["company_id"], r["lens_type_id"])
+        key = (r["company_id"], r["lens_type_id"], r["lens_type_item_id"])
         data.setdefault(key, {"purchased": 0, "input": 0, "output": 0, "defect": 0})
         data[key]["purchased"] = r["qty"] or 0
     for r in hardroom_rows:
-        key = (r["company_id"], r["lens_type_id"])
+        key = (r["company_id"], r["lens_type_id"], r["lens_type_item_id"])
         data.setdefault(key, {"purchased": 0, "input": 0, "output": 0, "defect": 0})
         data[key]["input"] = r["input_sum"] or 0
         data[key]["output"] = r["output_sum"] or 0
         data[key]["defect"] = r["defect_sum"] or 0
 
     rows = []
-    for (cid, ltid), v in data.items():
+    for (cid, ltid, ltiid), v in data.items():
         yield_pct = (v["output"] / v["input"] * 100) if v["input"] else 0
         rows.append({
             "supplier_name": supplier_names.get(cid, "(미지정)"),
             "lens_type_name": lens_type_names.get(ltid, "(미지정)"),
+            "lens_item_name": lens_item_names.get(ltiid, "(품명 미지정)"),
             "purchased": v["purchased"], "input": v["input"],
             "output": v["output"], "defect": v["defect"], "yield_pct": yield_pct,
         })
-    rows.sort(key=lambda r: (r["supplier_name"], r["lens_type_name"]))
+    rows.sort(key=lambda r: (r["supplier_name"], r["lens_type_name"], r["lens_item_name"]))
 
     return render_template(
         "production_materials.html", rows=rows, suppliers=suppliers, lens_types=lens_types,
