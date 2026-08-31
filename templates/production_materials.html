@@ -12,6 +12,16 @@
 
 <div class="card">
   <form method="get" class="filter-row">
+    <input type="date" name="start" value="{{ start }}" onchange="this.form.submit()">
+    <span style="color:var(--text-light);">~</span>
+    <input type="date" name="end" value="{{ end }}" onchange="this.form.submit()">
+  </form>
+</div>
+
+<div class="card">
+  <form method="get" class="filter-row">
+    <input type="hidden" name="start" value="{{ start }}">
+    <input type="hidden" name="end" value="{{ end }}">
     <select name="supplier_id" style="flex:1; min-width:110px;">
       <option value="">전체 매입처</option>
       {% for s in suppliers %}
@@ -32,7 +42,7 @@
   <table>
     <tr>
       <th>생지매입처</th><th>렌즈종류</th><th>품명</th>
-      <th class="num">매입량</th><th class="num">하드실투입량</th>
+      <th class="num">하드실투입량</th>
       <th class="num">완성품</th><th class="num">불량</th><th class="num">수율(%)</th>
     </tr>
     {% for r in rows %}
@@ -40,14 +50,13 @@
       <td>{{ r.supplier_name }}</td>
       <td>{{ r.lens_type_name }}</td>
       <td>{{ r.lens_item_name }}</td>
-      <td class="num">{{ "%.1f"|format(r.purchased) }}</td>
       <td class="num">{{ "%.1f"|format(r.input) }}</td>
       <td class="num">{{ "%.1f"|format(r.output) }}</td>
       <td class="num">{{ "%.1f"|format(r.defect) }}</td>
       <td class="num">{{ "%.1f"|format(r.yield_pct) }}</td>
     </tr>
     {% else %}
-    <tr><td colspan="8" class="empty">해당 조건의 데이터가 없습니다.</td></tr>
+    <tr><td colspan="7" class="empty">해당 조건의 데이터가 없습니다.</td></tr>
     {% endfor %}
   </table>
 </div>
