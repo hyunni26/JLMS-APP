@@ -568,7 +568,7 @@ def production():
     )
 
 
-# ---------------- 6-0. 거래처별 생지관리 (매입 vs 하드실 생산 비교) ----------------
+# ---------------- 6-0. 거래처별 생지관리 (하드실 생산 실적) ----------------
 @app.route("/production/materials")
 @login_required
 def supplier_materials():
@@ -579,6 +579,11 @@ def supplier_materials():
 
     supplier_id = request.args.get("supplier_id", "").strip()
     lens_type_id = request.args.get("lens_type_id", "").strip()
+
+    today = now_kst().strftime("%Y-%m-%d")
+    default_start = (now_kst() - timedelta(days=30)).strftime("%Y-%m-%d")
+    start = request.args.get("start", "").strip() or default_start
+    end = request.args.get("end", "").strip() or today
 
     suppliers = conn.execute(
         "SELECT id, name FROM company_master.supplier_companies ORDER BY name"
@@ -593,32 +598,14 @@ def supplier_materials():
     lens_type_names = {r["id"]: r["name"] for r in lens_types}
     lens_item_names = {r["id"]: r["name"] for r in lens_type_items}
 
-    purchase_where, purchase_params = [], []
-    if supplier_id:
-        purchase_where.append("p.company_id = ?")
-        purchase_params.append(supplier_id)
-    if lens_type_id:
-        purchase_where.append("pl.lens_type_id = ?")
-        purchase_params.append(lens_type_id)
-    purchase_where_sql = ("WHERE " + " AND ".join(purchase_where)) if purchase_where else ""
-
-    purchased_rows = conn.execute(
-        f"""SELECT p.company_id, pl.lens_type_id, pl.lens_type_item_id, SUM(pl.quantity) as qty
-            FROM main.purchase_lines pl
-            JOIN main.purchases p ON pl.purchase_id = p.id
-            {purchase_where_sql}
-            GROUP BY p.company_id, pl.lens_type_id, pl.lens_type_item_id""",
-        purchase_params,
-    ).fetchall()
-
-    hr_where, hr_params = [], []
+    hr_where, hr_params = ["work_date BETWEEN ? AND ?"], [start, end]
     if supplier_id:
         hr_where.append("company_id = ?")
         hr_params.append(supplier_id)
     if lens_type_id:
         hr_where.append("lens_type_id = ?")
         hr_params.append(lens_type_id)
-    hr_where_sql = ("WHERE " + " AND ".join(hr_where)) if hr_where else ""
+    hr_where_sql = "WHERE " + " AND ".join(hr_where)
 
     hardroom_rows = conn.execute(
         f"""SELECT company_id, lens_type_id, lens_type_item_id,
@@ -630,34 +617,23 @@ def supplier_materials():
     ).fetchall()
     conn.close()
 
-    # (매입처, 렌즈종류, 품명) 키로 매입 실적과 하드실 생산 실적을 합침 (한쪽만 있어도 0으로 채워서 표시)
-    data = {}
-    for r in purchased_rows:
-        key = (r["company_id"], r["lens_type_id"], r["lens_type_item_id"])
-        data.setdefault(key, {"purchased": 0, "input": 0, "output": 0, "defect": 0})
-        data[key]["purchased"] = r["qty"] or 0
-    for r in hardroom_rows:
-        key = (r["company_id"], r["lens_type_id"], r["lens_type_item_id"])
-        data.setdefault(key, {"purchased": 0, "input": 0, "output": 0, "defect": 0})
-        data[key]["input"] = r["input_sum"] or 0
-        data[key]["output"] = r["output_sum"] or 0
-        data[key]["defect"] = r["defect_sum"] or 0
-
     rows = []
-    for (cid, ltid, ltiid), v in data.items():
-        yield_pct = (v["output"] / v["input"] * 100) if v["input"] else 0
+    for r in hardroom_rows:
+        input_sum = r["input_sum"] or 0
+        output_sum = r["output_sum"] or 0
+        yield_pct = (output_sum / input_sum * 100) if input_sum else 0
         rows.append({
-            "supplier_name": supplier_names.get(cid, "(미지정)"),
-            "lens_type_name": lens_type_names.get(ltid, "(미지정)"),
-            "lens_item_name": lens_item_names.get(ltiid, "(품명 미지정)"),
-            "purchased": v["purchased"], "input": v["input"],
-            "output": v["output"], "defect": v["defect"], "yield_pct": yield_pct,
+            "supplier_name": supplier_names.get(r["company_id"], "(미지정)"),
+            "lens_type_name": lens_type_names.get(r["lens_type_id"], "(미지정)"),
+            "lens_item_name": lens_item_names.get(r["lens_type_item_id"], "(품명 미지정)"),
+            "input": input_sum, "output": output_sum,
+            "defect": r["defect_sum"] or 0, "yield_pct": yield_pct,
         })
     rows.sort(key=lambda r: (r["supplier_name"], r["lens_type_name"], r["lens_item_name"]))
 
     return render_template(
         "production_materials.html", rows=rows, suppliers=suppliers, lens_types=lens_types,
-        supplier_id=supplier_id, lens_type_id=lens_type_id,
+        supplier_id=supplier_id, lens_type_id=lens_type_id, start=start, end=end,
     )
 
 
