@@ -31,7 +31,7 @@
 <div class="card table-scroll">
   <table>
     <tr>
-      <th>생지매입처</th><th>렌즈종류</th>
+      <th>생지매입처</th><th>렌즈종류</th><th>품명</th>
       <th class="num">매입량</th><th class="num">하드실투입량</th>
       <th class="num">완성품</th><th class="num">불량</th><th class="num">수율(%)</th>
     </tr>
@@ -39,6 +39,7 @@
     <tr>
       <td>{{ r.supplier_name }}</td>
       <td>{{ r.lens_type_name }}</td>
+      <td>{{ r.lens_item_name }}</td>
       <td class="num">{{ "%.1f"|format(r.purchased) }}</td>
       <td class="num">{{ "%.1f"|format(r.input) }}</td>
       <td class="num">{{ "%.1f"|format(r.output) }}</td>
@@ -46,7 +47,7 @@
       <td class="num">{{ "%.1f"|format(r.yield_pct) }}</td>
     </tr>
     {% else %}
-    <tr><td colspan="7" class="empty">해당 조건의 데이터가 없습니다.</td></tr>
+    <tr><td colspan="8" class="empty">해당 조건의 데이터가 없습니다.</td></tr>
     {% endfor %}
   </table>
 </div>
