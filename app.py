@@ -609,7 +609,8 @@ def supplier_materials():
 
     hardroom_rows = conn.execute(
         f"""SELECT company_id, lens_type_id, lens_type_item_id,
-                   SUM(input_qty) as input_sum, SUM(output_qty) as output_sum, SUM(defect_qty) as defect_sum
+                   SUM(input_qty) as input_sum, SUM(output_qty) as output_sum,
+                   SUM(defect_qty) as defect_sum, SUM(discard_qty) as discard_sum
             FROM hardroom.hardroom_logs
             {hr_where_sql}
             GROUP BY company_id, lens_type_id, lens_type_item_id""",
@@ -627,7 +628,8 @@ def supplier_materials():
             "lens_type_name": lens_type_names.get(r["lens_type_id"], "(미지정)"),
             "lens_item_name": lens_item_names.get(r["lens_type_item_id"], "(품명 미지정)"),
             "input": input_sum, "output": output_sum,
-            "defect": r["defect_sum"] or 0, "yield_pct": yield_pct,
+            "defect": r["defect_sum"] or 0, "discard": r["discard_sum"] or 0,
+            "yield_pct": yield_pct,
         })
     rows.sort(key=lambda r: (r["supplier_name"], r["lens_type_name"], r["lens_item_name"]))
 
