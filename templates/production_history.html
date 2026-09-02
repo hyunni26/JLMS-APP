@@ -42,13 +42,14 @@
 </div>
 
 <div class="card table-scroll">
-  <h2>품목별 생산량 (투입량 많은 순)</h2>
+  <h2>품목별 생산량 (품목/품명별, 투입량 많은 순)</h2>
   <table>
     {% if has_output %}
-    <tr><th>품목</th><th class="num">건</th><th class="num">투입량</th><th class="num">완성품</th><th class="num">불량</th><th class="num">수율(%)</th></tr>
+    <tr><th>품목</th><th>품명</th><th class="num">건</th><th class="num">투입량</th><th class="num">완성품</th><th class="num">불량</th><th class="num">수율(%)</th></tr>
     {% for r in by_lens_type %}
     <tr>
       <td>{{ r.name or "(품목 미지정)" }}</td>
+      <td>{{ r.item_name or "(품명 미지정)" }}</td>
       <td class="num">{{ r.cnt }}</td>
       <td class="num">{{ "%.1f"|format(r.input_sum or 0) }}</td>
       <td class="num">{{ "%.1f"|format(r.output_sum or 0) }}</td>
@@ -56,20 +57,21 @@
       <td class="num">{{ "%.1f"|format((r.output_sum / r.input_sum * 100) if r.input_sum else 0) }}</td>
     </tr>
     {% else %}
-    <tr><td colspan="6" class="empty">해당 조건의 데이터가 없습니다.</td></tr>
+    <tr><td colspan="7" class="empty">해당 조건의 데이터가 없습니다.</td></tr>
     {% endfor %}
     {% else %}
-    <tr><th>품목</th><th class="num">건</th><th class="num">투입량</th><th class="num">불량</th><th class="num">수율(%)</th></tr>
+    <tr><th>품목</th><th>품명</th><th class="num">건</th><th class="num">투입량</th><th class="num">불량</th><th class="num">수율(%)</th></tr>
     {% for r in by_lens_type %}
     <tr>
       <td>{{ r.name or "(품목 미지정)" }}</td>
+      <td>{{ r.item_name or "(품명 미지정)" }}</td>
       <td class="num">{{ r.cnt }}</td>
       <td class="num">{{ "%.1f"|format(r.input_sum or 0) }}</td>
       <td class="num">{{ "%.1f"|format(r.defect_sum or 0) }}</td>
       <td class="num">{{ "%.1f"|format(((r.input_sum - r.defect_sum) / r.input_sum * 100) if r.input_sum else 0) }}</td>
     </tr>
     {% else %}
-    <tr><td colspan="5" class="empty">해당 조건의 데이터가 없습니다.</td></tr>
+    <tr><td colspan="6" class="empty">해당 조건의 데이터가 없습니다.</td></tr>
     {% endfor %}
     {% endif %}
   </table>
