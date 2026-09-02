@@ -650,11 +650,6 @@ def supplier_materials():
 @app.route("/production/history")
 @login_required
 def production_history():
-    conn = get_db()
-    if conn is None:
-        flash("먼저 데이터를 불러와주세요.")
-        return redirect(url_for("dashboard"))
-
     room = request.args.get("room", "hardroom")
     if room not in ("hardroom", "coatingroom", "packing"):
         room = "hardroom"
@@ -669,73 +664,86 @@ def production_history():
     default_start = (now_kst() - timedelta(days=30)).strftime("%Y-%m-%d")
     start = request.args.get("start", "").strip() or default_start
     end = request.args.get("end", "").strip() or today
-
-    lens_types = conn.execute("SELECT id, name FROM company_master.lens_types ORDER BY name").fetchall()
     lens_type_id = request.args.get("lens_type_id", "").strip()
-    lens_type_name = "전체"
-    if lens_type_id:
-        lt = conn.execute("SELECT name FROM company_master.lens_types WHERE id=?", (lens_type_id,)).fetchone()
-        lens_type_name = lt["name"] if lt else "전체"
 
-    where = "work_date BETWEEN ? AND ?"
-    params = [start, end]
-    if lens_type_id:
-        where += " AND lens_type_id=?"
-        params.append(lens_type_id)
+    conn = None
+    try:
+        conn = get_db()
+        if conn is None:
+            flash("먼저 데이터를 불러와주세요.")
+            return redirect(url_for("dashboard"))
 
-    if has_output:
-        total = conn.execute(
-            f"""SELECT COUNT(*) as cnt, COALESCE(SUM(input_qty),0) as input_sum,
-                       COALESCE(SUM(output_qty),0) as output_sum, COALESCE(SUM(defect_qty),0) as defect_sum,
-                       COALESCE(SUM(discard_qty),0) as discard_sum
-                FROM {table} WHERE {where}""",
-            params,
-        ).fetchone()
-        by_lens_type = conn.execute(
-            f"""SELECT lt.id as lens_type_id, lt.name, lti.name as item_name, COUNT(*) as cnt,
-                       COALESCE(SUM(t.input_qty),0) as input_sum, COALESCE(SUM(t.output_qty),0) as output_sum,
-                       COALESCE(SUM(t.defect_qty),0) as defect_sum, COALESCE(SUM(t.discard_qty),0) as discard_sum
-                FROM {table} t
-                LEFT JOIN company_master.lens_types lt ON t.lens_type_id = lt.id
-                LEFT JOIN company_master.lens_type_items lti ON t.lens_type_item_id = lti.id
-                WHERE {where}
-                GROUP BY t.lens_type_id, t.lens_type_item_id ORDER BY lt.name, input_sum DESC""",
-            params,
-        ).fetchall()
-    else:
-        total = conn.execute(
-            f"""SELECT COUNT(*) as cnt, COALESCE(SUM(input_qty),0) as input_sum,
-                       COALESCE(SUM(defect_qty),0) as defect_sum
-                FROM {table} WHERE {where}""",
-            params,
-        ).fetchone()
-        by_lens_type = conn.execute(
-            f"""SELECT lt.id as lens_type_id, lt.name, lti.name as item_name, COUNT(*) as cnt,
-                       COALESCE(SUM(t.input_qty),0) as input_sum, COALESCE(SUM(t.defect_qty),0) as defect_sum
-                FROM {table} t
-                LEFT JOIN company_master.lens_types lt ON t.lens_type_id = lt.id
-                LEFT JOIN company_master.lens_type_items lti ON t.lens_type_item_id = lti.id
-                WHERE {where}
-                GROUP BY t.lens_type_id, t.lens_type_item_id ORDER BY lt.name, input_sum DESC""",
-            params,
-        ).fetchall()
-    conn.close()
+        lens_types = conn.execute("SELECT id, name FROM company_master.lens_types ORDER BY name").fetchall()
+        lens_type_name = "전체"
+        if lens_type_id:
+            lt = conn.execute("SELECT name FROM company_master.lens_types WHERE id=?", (lens_type_id,)).fetchone()
+            lens_type_name = lt["name"] if lt else "전체"
 
-    total = dict(total) if total else {}
-    input_sum = total.get("input_sum", 0) or 0
-    if has_output:
-        output_sum = total.get("output_sum", 0) or 0
-        rate = (output_sum / input_sum * 100) if input_sum else 0
-    else:
-        defect_sum = total.get("defect_sum", 0) or 0
-        rate = ((input_sum - defect_sum) / input_sum * 100) if input_sum else 0
+        where = "t.work_date BETWEEN ? AND ?"
+        params = [start, end]
+        if lens_type_id:
+            where += " AND t.lens_type_id=?"
+            params.append(lens_type_id)
 
-    return render_template(
-        "production_history.html",
-        room=room, has_output=has_output, start=start, end=end,
-        lens_types=lens_types, lens_type_id=lens_type_id, lens_type_name=lens_type_name,
-        total=total, rate=rate, by_lens_type=by_lens_type,
-    )
+        if has_output:
+            total = conn.execute(
+                f"""SELECT COUNT(*) as cnt, COALESCE(SUM(t.input_qty),0) as input_sum,
+                           COALESCE(SUM(t.output_qty),0) as output_sum, COALESCE(SUM(t.defect_qty),0) as defect_sum,
+                           COALESCE(SUM(t.discard_qty),0) as discard_sum
+                    FROM {table} t WHERE {where}""",
+                params,
+            ).fetchone()
+            by_lens_type = conn.execute(
+                f"""SELECT lt.id as lens_type_id, lt.name, lti.name as item_name, COUNT(*) as cnt,
+                           COALESCE(SUM(t.input_qty),0) as input_sum, COALESCE(SUM(t.output_qty),0) as output_sum,
+                           COALESCE(SUM(t.defect_qty),0) as defect_sum, COALESCE(SUM(t.discard_qty),0) as discard_sum
+                    FROM {table} t
+                    LEFT JOIN company_master.lens_types lt ON t.lens_type_id = lt.id
+                    LEFT JOIN company_master.lens_type_items lti ON t.lens_type_item_id = lti.id
+                    WHERE {where}
+                    GROUP BY t.lens_type_id, t.lens_type_item_id ORDER BY lt.name, input_sum DESC""",
+                params,
+            ).fetchall()
+        else:
+            total = conn.execute(
+                f"""SELECT COUNT(*) as cnt, COALESCE(SUM(t.input_qty),0) as input_sum,
+                           COALESCE(SUM(t.defect_qty),0) as defect_sum
+                    FROM {table} t WHERE {where}""",
+                params,
+            ).fetchone()
+            by_lens_type = conn.execute(
+                f"""SELECT lt.id as lens_type_id, lt.name, lti.name as item_name, COUNT(*) as cnt,
+                           COALESCE(SUM(t.input_qty),0) as input_sum, COALESCE(SUM(t.defect_qty),0) as defect_sum
+                    FROM {table} t
+                    LEFT JOIN company_master.lens_types lt ON t.lens_type_id = lt.id
+                    LEFT JOIN company_master.lens_type_items lti ON t.lens_type_item_id = lti.id
+                    WHERE {where}
+                    GROUP BY t.lens_type_id, t.lens_type_item_id ORDER BY lt.name, input_sum DESC""",
+                params,
+            ).fetchall()
+
+        total = dict(total) if total else {}
+        input_sum = total.get("input_sum", 0) or 0
+        if has_output:
+            output_sum = total.get("output_sum", 0) or 0
+            rate = (output_sum / input_sum * 100) if input_sum else 0
+        else:
+            defect_sum = total.get("defect_sum", 0) or 0
+            rate = ((input_sum - defect_sum) / input_sum * 100) if input_sum else 0
+
+        return render_template(
+            "production_history.html",
+            room=room, has_output=has_output, start=start, end=end,
+            lens_types=lens_types, lens_type_id=lens_type_id, lens_type_name=lens_type_name,
+            total=total, rate=rate, by_lens_type=by_lens_type,
+        )
+    except Exception as e:
+        app.logger.exception("production_history 처리 중 오류")
+        flash(f"생산 이력 조회 중 오류가 발생했습니다: {type(e).__name__}: {e}")
+        return redirect(url_for("dashboard"))
+    finally:
+        if conn is not None:
+            conn.close()
 
 
 if __name__ == "__main__":
