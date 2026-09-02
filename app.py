@@ -694,7 +694,7 @@ def production_history():
         by_lens_type = conn.execute(
             f"""SELECT lt.id as lens_type_id, lt.name, lti.name as item_name, COUNT(*) as cnt,
                        COALESCE(SUM(t.input_qty),0) as input_sum, COALESCE(SUM(t.output_qty),0) as output_sum,
-                       COALESCE(SUM(t.defect_qty),0) as defect_sum
+                       COALESCE(SUM(t.defect_qty),0) as defect_sum, COALESCE(SUM(t.discard_qty),0) as discard_sum
                 FROM {table} t
                 LEFT JOIN company_master.lens_types lt ON t.lens_type_id = lt.id
                 LEFT JOIN company_master.lens_type_items lti ON t.lens_type_item_id = lti.id
