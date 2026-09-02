@@ -472,6 +472,8 @@ def night_work():
             j += 1
         merged[i]["company_rowspan"] = j - i
         merged[i]["company_total"] = sum(merged[k]["total_qty"] for k in range(i, j))
+        company_rework_total = sum(merged[k]["rework_qty"] for k in range(i, j))
+        merged[i]["company_rework_ratio"] = _rework_ratio(company_rework_total, merged[i]["company_total"])
         for k in range(i + 1, j):
             merged[k]["company_rowspan"] = 0
         i = j
@@ -579,6 +581,7 @@ def supplier_materials():
 
     supplier_id = request.args.get("supplier_id", "").strip()
     lens_type_id = request.args.get("lens_type_id", "").strip()
+    lens_item_id = request.args.get("lens_item_id", "").strip()
 
     today = now_kst().strftime("%Y-%m-%d")
     default_start = (now_kst() - timedelta(days=30)).strftime("%Y-%m-%d")
@@ -592,7 +595,7 @@ def supplier_materials():
         "SELECT id, name FROM company_master.lens_types ORDER BY name"
     ).fetchall()
     lens_type_items = conn.execute(
-        "SELECT id, lens_type_id, name FROM company_master.lens_type_items"
+        "SELECT id, lens_type_id, name FROM company_master.lens_type_items ORDER BY name"
     ).fetchall()
     supplier_names = {r["id"]: r["name"] for r in suppliers}
     lens_type_names = {r["id"]: r["name"] for r in lens_types}
@@ -605,6 +608,9 @@ def supplier_materials():
     if lens_type_id:
         hr_where.append("lens_type_id = ?")
         hr_params.append(lens_type_id)
+    if lens_item_id:
+        hr_where.append("lens_type_item_id = ?")
+        hr_params.append(lens_item_id)
     hr_where_sql = "WHERE " + " AND ".join(hr_where)
 
     hardroom_rows = conn.execute(
@@ -635,7 +641,8 @@ def supplier_materials():
 
     return render_template(
         "production_materials.html", rows=rows, suppliers=suppliers, lens_types=lens_types,
-        supplier_id=supplier_id, lens_type_id=lens_type_id, start=start, end=end,
+        lens_type_items=lens_type_items, supplier_id=supplier_id, lens_type_id=lens_type_id,
+        lens_item_id=lens_item_id, start=start, end=end,
     )
 
 
@@ -685,13 +692,14 @@ def production_history():
             params,
         ).fetchone()
         by_lens_type = conn.execute(
-            f"""SELECT lt.id as lens_type_id, lt.name, COUNT(*) as cnt,
+            f"""SELECT lt.id as lens_type_id, lt.name, lti.name as item_name, COUNT(*) as cnt,
                        COALESCE(SUM(t.input_qty),0) as input_sum, COALESCE(SUM(t.output_qty),0) as output_sum,
                        COALESCE(SUM(t.defect_qty),0) as defect_sum
                 FROM {table} t
                 LEFT JOIN company_master.lens_types lt ON t.lens_type_id = lt.id
+                LEFT JOIN company_master.lens_type_items lti ON t.lens_type_item_id = lti.id
                 WHERE {where}
-                GROUP BY t.lens_type_id ORDER BY input_sum DESC""",
+                GROUP BY t.lens_type_id, t.lens_type_item_id ORDER BY lt.name, input_sum DESC""",
             params,
         ).fetchall()
     else:
@@ -702,12 +710,13 @@ def production_history():
             params,
         ).fetchone()
         by_lens_type = conn.execute(
-            f"""SELECT lt.id as lens_type_id, lt.name, COUNT(*) as cnt,
+            f"""SELECT lt.id as lens_type_id, lt.name, lti.name as item_name, COUNT(*) as cnt,
                        COALESCE(SUM(t.input_qty),0) as input_sum, COALESCE(SUM(t.defect_qty),0) as defect_sum
                 FROM {table} t
                 LEFT JOIN company_master.lens_types lt ON t.lens_type_id = lt.id
+                LEFT JOIN company_master.lens_type_items lti ON t.lens_type_item_id = lti.id
                 WHERE {where}
-                GROUP BY t.lens_type_id ORDER BY input_sum DESC""",
+                GROUP BY t.lens_type_id, t.lens_type_item_id ORDER BY lt.name, input_sum DESC""",
             params,
         ).fetchall()
     conn.close()
