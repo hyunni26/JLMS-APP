@@ -34,6 +34,12 @@
       <option value="{{ lt.id }}" {{ "selected" if lens_type_id|string == lt.id|string }}>{{ lt.name }}</option>
       {% endfor %}
     </select>
+    <select name="lens_item_id" style="flex:1; min-width:110px;">
+      <option value="">전체 품명</option>
+      {% for li in lens_type_items %}
+      <option value="{{ li.id }}" {{ "selected" if lens_item_id|string == li.id|string }}>{{ li.name }}</option>
+      {% endfor %}
+    </select>
     <button type="submit" class="btn ghost">조회</button>
   </form>
 </div>
