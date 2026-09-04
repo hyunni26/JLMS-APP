@@ -6,6 +6,7 @@
 <div class="tabs">
   <a href="{{ url_for('night_work', view='company', start=start, end=end) }}" class="{{ 'active' if view=='company' }}">거래처별</a>
   <a href="{{ url_for('night_work', view='total', start=start, end=end) }}" class="{{ 'active' if view=='total' }}">총합계</a>
+  <a href="{{ url_for('night_work', view='ranking', start=start, end=end) }}" class="{{ 'active' if view=='ranking' }}">작업현황</a>
 </div>
 
 <form method="get" class="filter-row" id="dateForm">
@@ -13,6 +14,12 @@
   <input type="date" name="start" value="{{ start }}" onchange="this.form.submit()">
   <span style="color:var(--text-light);">~</span>
   <input type="date" name="end" value="{{ end }}" onchange="this.form.submit()">
+  {% if view == 'ranking' %}
+  <select name="sort" onchange="this.form.submit()">
+    <option value="rework_ratio" {{ "selected" if sort_by=='rework_ratio' }}>재작업 비율</option>
+    <option value="total_work" {{ "selected" if sort_by=='total_work' }}>총작업 수</option>
+  </select>
+  {% endif %}
 </form>
 
 <div class="card table-scroll">
@@ -41,6 +48,20 @@
       <td class="num">{{ "%.1f"|format(grand_total.rework_ratio) }}</td>
     </tr>
     {% endif %}
+
+    {% elif view == 'ranking' %}
+    <tr><th>순위</th><th>거래처</th><th class="num">작업총량</th><th class="num">재작업량</th><th class="num">재작업비율(%)</th></tr>
+    {% for r in rows %}
+    <tr>
+      <td>{{ r.rank }}</td>
+      <td>{{ r.company_name or '-' }}</td>
+      <td class="num">{{ "%.1f"|format(r.total_qty) }}</td>
+      <td class="num">{{ "%.1f"|format(r.rework_qty) }}</td>
+      <td class="num">{{ "%.1f"|format(r.rework_ratio) }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="empty">데이터가 없습니다.</td></tr>
+    {% endfor %}
 
     {% else %}
     <tr><th>거래처</th><th>처리종류</th><th class="num">작업</th><th class="num">컷팅</th><th class="num">재작업</th><th class="num">작업합(리웍율%)</th><th class="num">총합(리웍율%)</th></tr>
