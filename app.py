@@ -386,7 +386,7 @@ def night_work():
     start = request.args.get("start", "").strip() or default_date
     end = request.args.get("end", "").strip() or default_date
     view = request.args.get("view", "company")
-    if view not in ("company", "total"):
+    if view not in ("company", "total", "ranking"):
         view = "company"
 
     rows = []
@@ -443,6 +443,36 @@ def night_work():
         return render_template(
             "night_work.html", rows=result_rows, grand_total=grand_total,
             start=start, end=end, view=view,
+        )
+
+    if view == "ranking":
+        # 거래처별로 전체(모든 처리종류 합산) 작업총량/재작업량/재작업비율 순위
+        sort_by = request.args.get("sort", "rework_ratio")
+        if sort_by not in ("rework_ratio", "total_work"):
+            sort_by = "rework_ratio"
+
+        totals = {}
+        order = []
+        for d in processed:
+            key = d["company_name"] or "-"
+            if key not in totals:
+                totals[key] = {"company_name": key, "rework_qty": 0, "total_qty": 0}
+                order.append(key)
+            totals[key]["rework_qty"] += d["rework_qty"] or 0
+            totals[key]["total_qty"] += d["total_qty"]
+        result_rows = [totals[k] for k in order]
+        for t in result_rows:
+            t["rework_ratio"] = _rework_ratio(t["rework_qty"], t["total_qty"])
+
+        if sort_by == "total_work":
+            result_rows.sort(key=lambda r: r["total_qty"], reverse=True)
+        else:
+            result_rows.sort(key=lambda r: r["rework_ratio"])
+        for idx, r in enumerate(result_rows, start=1):
+            r["rank"] = idx
+
+        return render_template(
+            "night_work.html", rows=result_rows, start=start, end=end, view=view, sort_by=sort_by,
         )
 
     # 거래처별: 같은 거래처+처리종류 조합이 기간 내 여러 날짜에 걸쳐 있으면 하나로 합산
