@@ -546,7 +546,8 @@ def production():
 
     if has_output:
         summary = conn.execute(
-            f"SELECT work_date, COUNT(*) as cnt, SUM(input_qty) as input_sum, SUM(output_qty) as output_sum "
+            f"SELECT work_date, COUNT(*) as cnt, SUM(input_qty) as input_sum, SUM(output_qty) as output_sum, "
+            f"SUM(defect_qty) as defect_sum, SUM(discard_qty) as discard_sum "
             f"FROM {table} {where_clause} GROUP BY work_date ORDER BY work_date DESC LIMIT 60",
             params,
         ).fetchall()
