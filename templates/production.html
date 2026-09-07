@@ -25,20 +25,41 @@
 
 <div class="card table-scroll">
   <table>
+    {% if has_output %}
     <tr>
       <th>일자</th><th class="num">건</th><th class="num">투입량</th>
-      <th class="num">{{ "완성품" if has_output else "불량" }}</th>
+      <th class="num">완성품</th><th class="num">불량</th><th class="num">폐기</th><th class="num">수율(%)</th>
     </tr>
     {% for s in summary %}
     <tr onclick="location.href='{{ url_for('production', room=room, date=s.work_date, start=start, end=end) }}'" style="cursor:pointer;">
       <td>{{ s.work_date }}</td>
       <td class="num">{{ s.cnt }}</td>
       <td class="num">{{ "%.1f"|format(s.input_sum or 0) }}</td>
-      <td class="num">{{ "%.1f"|format((s.output_sum if has_output else s.defect_sum) or 0) }}</td>
+      <td class="num">{{ "%.1f"|format(s.output_sum or 0) }}</td>
+      <td class="num">{{ "%.1f"|format(s.defect_sum or 0) }}</td>
+      <td class="num">{{ "%.1f"|format(s.discard_sum or 0) }}</td>
+      <td class="num">{{ "%.1f"|format((s.output_sum / s.input_sum * 100) if s.input_sum else 0) }}</td>
     </tr>
     {% else %}
-    <tr><td colspan="4" class="empty">데이터가 없습니다.</td></tr>
+    <tr><td colspan="7" class="empty">데이터가 없습니다.</td></tr>
     {% endfor %}
+    {% else %}
+    <tr>
+      <th>일자</th><th class="num">건</th><th class="num">투입량</th>
+      <th class="num">불량</th><th class="num">수율(%)</th>
+    </tr>
+    {% for s in summary %}
+    <tr onclick="location.href='{{ url_for('production', room=room, date=s.work_date, start=start, end=end) }}'" style="cursor:pointer;">
+      <td>{{ s.work_date }}</td>
+      <td class="num">{{ s.cnt }}</td>
+      <td class="num">{{ "%.1f"|format(s.input_sum or 0) }}</td>
+      <td class="num">{{ "%.1f"|format(s.defect_sum or 0) }}</td>
+      <td class="num">{{ "%.1f"|format(((s.input_sum - s.defect_sum) / s.input_sum * 100) if s.input_sum else 0) }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="empty">데이터가 없습니다.</td></tr>
+    {% endfor %}
+    {% endif %}
   </table>
 </div>
 
