@@ -28,20 +28,24 @@
     {% if has_output %}
     <tr>
       <th>일자</th><th class="num">건</th><th class="num">투입량</th>
-      <th class="num">완성품</th><th class="num">불량</th><th class="num">폐기</th><th class="num">수율(%)</th>
+      <th class="num">완성품</th><th class="num">불량</th><th class="num">폐기</th><th class="num">수율</th><th class="num">폐기율</th>
     </tr>
     {% for s in summary %}
+    {% set s_input = s.input_sum or 0 %}
+    {% set s_discard = s.discard_sum or 0 %}
+    {% set s_denom = s_input - s_discard %}
     <tr onclick="location.href='{{ url_for('production', room=room, date=s.work_date, start=start, end=end) }}'" style="cursor:pointer;">
       <td>{{ s.work_date }}</td>
       <td class="num">{{ s.cnt }}</td>
-      <td class="num">{{ "%.1f"|format(s.input_sum or 0) }}</td>
+      <td class="num">{{ "%.1f"|format(s_input) }}</td>
       <td class="num">{{ "%.1f"|format(s.output_sum or 0) }}</td>
       <td class="num">{{ "%.1f"|format(s.defect_sum or 0) }}</td>
-      <td class="num">{{ "%.1f"|format(s.discard_sum or 0) }}</td>
-      <td class="num">{{ "%.1f"|format((s.output_sum / s.input_sum * 100) if s.input_sum else 0) }}</td>
+      <td class="num">{{ "%.1f"|format(s_discard) }}</td>
+      <td class="num">{{ "%.1f"|format((s.output_sum / s_denom * 100) if s_denom else 0) }}</td>
+      <td class="num">{{ "%.1f"|format((s_discard / s_input * 100) if s_input else 0) }}</td>
     </tr>
     {% else %}
-    <tr><td colspan="7" class="empty">데이터가 없습니다.</td></tr>
+    <tr><td colspan="8" class="empty">데이터가 없습니다.</td></tr>
     {% endfor %}
     {% else %}
     <tr>
@@ -68,27 +72,35 @@
 <div class="card table-scroll">
   <table>
     {% if room == 'hardroom' %}
-    <tr><th>매입처</th><th>품목</th><th>품명</th><th class="num">투입</th><th class="num">불량</th><th class="num">폐기</th><th class="num">완성</th><th class="num">수율(%)</th></tr>
+    <tr><th>매입처</th><th>품목</th><th>품명</th><th class="num">투입</th><th class="num">불량</th><th class="num">폐기</th><th class="num">완성</th><th class="num">수율</th><th class="num">폐기율</th></tr>
     {% for d in detail %}
+    {% set d_input = d.input_qty or 0 %}
+    {% set d_discard = d.discard_qty or 0 %}
+    {% set d_denom = d_input - d_discard %}
     <tr>
       <td>{{ d.company_name or '-' }}</td><td>{{ d.lens_type_name or '-' }}</td><td>{{ d.lens_item_name or '' }}</td>
-      <td class="num">{{ "%.1f"|format(d.input_qty or 0) }}</td>
+      <td class="num">{{ "%.1f"|format(d_input) }}</td>
       <td class="num">{{ "%.1f"|format(d.defect_qty or 0) }}</td>
-      <td class="num">{{ "%.1f"|format(d.discard_qty or 0) }}</td>
+      <td class="num">{{ "%.1f"|format(d_discard) }}</td>
       <td class="num">{{ "%.1f"|format(d.output_qty or 0) }}</td>
-      <td class="num">{{ "%.1f"|format((d.output_qty / d.input_qty * 100) if d.input_qty else 0) }}</td>
+      <td class="num">{{ "%.1f"|format((d.output_qty / d_denom * 100) if d_denom else 0) }}</td>
+      <td class="num">{{ "%.1f"|format((d_discard / d_input * 100) if d_input else 0) }}</td>
     </tr>
     {% endfor %}
     {% elif room == 'coatingroom' %}
-    <tr><th>매입처</th><th>품목</th><th>품명</th><th class="num">투입</th><th class="num">불량</th><th class="num">폐기</th><th class="num">완성</th><th class="num">수율(%)</th></tr>
+    <tr><th>매입처</th><th>품목</th><th>품명</th><th class="num">투입</th><th class="num">불량</th><th class="num">폐기</th><th class="num">완성</th><th class="num">수율</th><th class="num">폐기율</th></tr>
     {% for d in detail %}
+    {% set d_input = d.input_qty or 0 %}
+    {% set d_discard = d.discard_qty or 0 %}
+    {% set d_denom = d_input - d_discard %}
     <tr>
       <td>{{ d.company_name or '-' }}</td><td>{{ d.lens_type_name or '-' }}</td><td>{{ d.lens_item_name or '' }}</td>
-      <td class="num">{{ "%.1f"|format(d.input_qty or 0) }}</td>
+      <td class="num">{{ "%.1f"|format(d_input) }}</td>
       <td class="num">{{ "%.1f"|format(d.defect_qty or 0) }}</td>
-      <td class="num">{{ "%.1f"|format(d.discard_qty or 0) }}</td>
+      <td class="num">{{ "%.1f"|format(d_discard) }}</td>
       <td class="num">{{ "%.1f"|format(d.output_qty or 0) }}</td>
-      <td class="num">{{ "%.1f"|format((d.output_qty / d.input_qty * 100) if d.input_qty else 0) }}</td>
+      <td class="num">{{ "%.1f"|format((d.output_qty / d_denom * 100) if d_denom else 0) }}</td>
+      <td class="num">{{ "%.1f"|format((d_discard / d_input * 100) if d_input else 0) }}</td>
     </tr>
     {% endfor %}
     {% else %}
