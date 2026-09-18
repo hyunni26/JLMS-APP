@@ -659,14 +659,17 @@ def supplier_materials():
     for r in hardroom_rows:
         input_sum = r["input_sum"] or 0
         output_sum = r["output_sum"] or 0
-        yield_pct = (output_sum / input_sum * 100) if input_sum else 0
+        discard_sum = r["discard_sum"] or 0
+        denom = input_sum - discard_sum
+        yield_pct = (output_sum / denom * 100) if denom else 0
+        discard_rate = (discard_sum / input_sum * 100) if input_sum else 0
         rows.append({
             "supplier_name": supplier_names.get(r["company_id"], "(미지정)"),
             "lens_type_name": lens_type_names.get(r["lens_type_id"], "(미지정)"),
             "lens_item_name": lens_item_names.get(r["lens_type_item_id"], "(품명 미지정)"),
             "input": input_sum, "output": output_sum,
-            "defect": r["defect_sum"] or 0, "discard": r["discard_sum"] or 0,
-            "yield_pct": yield_pct,
+            "defect": r["defect_sum"] or 0, "discard": discard_sum,
+            "yield_pct": yield_pct, "discard_rate": discard_rate,
         })
     rows.sort(key=lambda r: (r["supplier_name"], r["lens_type_name"], r["lens_item_name"]))
 
@@ -757,16 +760,20 @@ def production_history():
         input_sum = total.get("input_sum", 0) or 0
         if has_output:
             output_sum = total.get("output_sum", 0) or 0
-            rate = (output_sum / input_sum * 100) if input_sum else 0
+            discard_sum = total.get("discard_sum", 0) or 0
+            denom = input_sum - discard_sum
+            rate = (output_sum / denom * 100) if denom else 0
+            discard_rate = (discard_sum / input_sum * 100) if input_sum else 0
         else:
             defect_sum = total.get("defect_sum", 0) or 0
             rate = ((input_sum - defect_sum) / input_sum * 100) if input_sum else 0
+            discard_rate = 0
 
         return render_template(
             "production_history.html",
             room=room, has_output=has_output, start=start, end=end,
             lens_types=lens_types, lens_type_id=lens_type_id, lens_type_name=lens_type_name,
-            total=total, rate=rate, by_lens_type=by_lens_type,
+            total=total, rate=rate, discard_rate=discard_rate, by_lens_type=by_lens_type,
         )
     except Exception as e:
         app.logger.exception("production_history 처리 중 오류")
