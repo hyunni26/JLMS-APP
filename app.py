@@ -522,8 +522,11 @@ def production():
 
     room = request.args.get("room", "hardroom")
     date_filter = request.args.get("date", "").strip()
-    start = request.args.get("start", "").strip()
-    end = request.args.get("end", "").strip()
+    today_kst = now_kst()
+    default_start = today_kst.replace(day=1).strftime("%Y-%m-%d")
+    default_end = today_kst.strftime("%Y-%m-%d")
+    start = request.args.get("start", "").strip() or default_start
+    end = request.args.get("end", "").strip() or default_end
 
     if room == "coatingroom":
         table, has_output = "coatingroom.coatingroom_logs", True
