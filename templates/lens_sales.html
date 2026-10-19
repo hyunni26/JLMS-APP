@@ -27,14 +27,27 @@
   .ls { border-collapse: separate; border-spacing: 0; }
   .ls thead th { position: sticky; top: 0; z-index: 2; }
   .ls .c1, .ls .c2 { position: sticky; z-index: 1; background: var(--card); }
-  .ls .c1 { left: 0; min-width: 84px; max-width: 84px; overflow: hidden; text-overflow: ellipsis; }
+  .ls .c1 { left: 0; min-width: 84px; max-width: 84px; white-space: normal; word-break: keep-all; }
   .ls .c2 { left: 84px; border-right: 1px solid var(--border); }
-  .ls tbody tr:nth-child(even) .c1, .ls tbody tr:nth-child(even) .c2 { background: #F0F2F7; }
   .ls thead th.c1, .ls thead th.c2 { z-index: 3; background: var(--navy); }
-  .ls tr.sub td { font-weight: bold; border-top: 1px solid var(--navy); }
+  /* 품목 병합 칸 */
+  .ls td.c1.type {
+    vertical-align: top; text-align: center; font-weight: 600; color: var(--navy);
+    border-right: 1px solid var(--border);
+  }
+  /* 긴 그룹을 스크롤해도 품목명이 머리행 바로 아래에 따라 붙어 보이도록 */
+  .ls td.c1.type span { display: block; position: sticky; top: 44px; padding-top: 2px; }
+  /* 같은 품목 = 한 테두리: 그룹 첫 줄 위에 굵은 선 */
+  .ls tbody.grp tr:first-child td { border-top: 2px solid var(--navy); }
+  .ls tbody.grp tr:nth-child(even) td.c2 { background: #F0F2F7; }
+  /* 품목별 계 행 */
+  .ls tbody.grp tr.sub td { background: #DCE3F0; font-weight: bold; color: var(--navy-dark); }
+  .ls tbody.grp tr.sub td.c2 { background: #DCE3F0; text-align: center; }
+  /* 전체 합계 (하단 고정) */
   .ls tfoot td {
     position: sticky; bottom: 0; z-index: 2; font-weight: bold;
-    background: var(--gold); color: var(--navy-dark); border-bottom: none;
+    background: var(--gold); color: var(--navy-dark);
+    border-top: 2px solid var(--navy); border-bottom: none;
   }
   .ls tfoot td.c1, .ls tfoot td.c2 { z-index: 3; background: var(--gold); }
 </style>
@@ -49,33 +62,36 @@
         <th class="num">구매액</th><th class="num">마진율(%)</th>
       </tr>
     </thead>
-    <tbody>
-      {% for g in groups %}
-        {% for r in g["items"] %}
-        <tr>
-          <td class="c1">{{ r.type_name }}</td><td class="c2">{{ r.item_name }}</td>
-          <td class="num">{{ "%.1f"|format(r.sale_qty) }}</td>
-          <td class="num">{{ "{:,.0f}".format(r.sale_amt) }}</td>
-          <td class="num">{{ "%.1f"|format(r.ret_qty) }}</td>
-          <td class="num">{{ "{:,.0f}".format(r.ret_amt) }}</td>
-          <td class="num">{{ "{:,.0f}".format(r.buy_amt) }}</td>
-          <td class="num">{{ "%.1f"|format(r.margin) }}</td>
-        </tr>
-        {% endfor %}
-        {% set s = g.sub %}
-        <tr class="sub">
-          <td class="c1">{{ g.type_name }}</td><td class="c2">계</td>
-          <td class="num">{{ "%.1f"|format(s.sale_qty) }}</td>
-          <td class="num">{{ "{:,.0f}".format(s.sale_amt) }}</td>
-          <td class="num">{{ "%.1f"|format(s.ret_qty) }}</td>
-          <td class="num">{{ "{:,.0f}".format(s.ret_amt) }}</td>
-          <td class="num">{{ "{:,.0f}".format(s.buy_amt) }}</td>
-          <td class="num">{{ "%.1f"|format(s.margin) }}</td>
-        </tr>
-      {% else %}
-        <tr><td colspan="8" class="empty">해당 조건의 판매 데이터가 없습니다.</td></tr>
+    {% for g in groups %}
+    <tbody class="grp">
+      {% for r in g["items"] %}
+      <tr>
+        {% if loop.first %}<td class="c1 type" rowspan="{{ g['items']|length + 1 }}"><span>{{ g.type_name }}</span></td>{% endif %}
+        <td class="c2">{{ r.item_name }}</td>
+        <td class="num">{{ "%.1f"|format(r.sale_qty) }}</td>
+        <td class="num">{{ "{:,.0f}".format(r.sale_amt) }}</td>
+        <td class="num">{{ "%.1f"|format(r.ret_qty) }}</td>
+        <td class="num">{{ "{:,.0f}".format(r.ret_amt) }}</td>
+        <td class="num">{{ "{:,.0f}".format(r.buy_amt) }}</td>
+        <td class="num">{{ "%.1f"|format(r.margin) }}</td>
+      </tr>
       {% endfor %}
+      {% set s = g.sub %}
+      <tr class="sub">
+        <td class="c2">계</td>
+        <td class="num">{{ "%.1f"|format(s.sale_qty) }}</td>
+        <td class="num">{{ "{:,.0f}".format(s.sale_amt) }}</td>
+        <td class="num">{{ "%.1f"|format(s.ret_qty) }}</td>
+        <td class="num">{{ "{:,.0f}".format(s.ret_amt) }}</td>
+        <td class="num">{{ "{:,.0f}".format(s.buy_amt) }}</td>
+        <td class="num">{{ "%.1f"|format(s.margin) }}</td>
+      </tr>
     </tbody>
+    {% else %}
+    <tbody>
+      <tr><td colspan="8" class="empty">해당 조건의 판매 데이터가 없습니다.</td></tr>
+    </tbody>
+    {% endfor %}
     {% if groups %}
     <tfoot>
       <tr>
