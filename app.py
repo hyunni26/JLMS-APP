@@ -245,10 +245,11 @@ def lens_sales():
     today_kst = now_kst()
     start = request.args.get("start", "").strip() or today_kst.replace(day=1).strftime("%Y-%m-%d")
     end = request.args.get("end", "").strip() or today_kst.strftime("%Y-%m-%d")
-    # 필터 기준: company(거래처별, 기본) / type(품목별). 둘 중 하나만 적용된다.
-    mode = "type" if request.args.get("mode") == "type" else "company"
+    # 필터 기준: company(거래처별, 기본) / item(품명별). 둘 중 하나만 적용된다.
+    mode = "item" if request.args.get("mode") == "item" else "company"
     company_id = request.args.get("company_id", "").strip() if mode == "company" else ""
-    lens_type_id = request.args.get("lens_type_id", "").strip() if mode == "type" else ""
+    lens_type_id = request.args.get("lens_type_id", "").strip() if mode == "item" else ""
+    lens_item_id = request.args.get("lens_item_id", "").strip() if mode == "item" else ""
 
     conn = None
     try:
@@ -258,29 +259,39 @@ def lens_sales():
             return redirect(url_for("dashboard"))
 
         companies = conn.execute("SELECT id, name FROM company_master.companies ORDER BY name").fetchall()
-        lens_types = conn.execute(
-            "SELECT id, name FROM company_master.lens_types WHERE COALESCE(is_deleted, 0) = 0 "
-            "ORDER BY sort_order, id"
-        ).fetchall()
-        # 품목별 모드는 품목 하나를 골라야 의미가 있으므로, 미선택/잘못된 값이면 첫 품목으로 맞춘다.
-        if mode == "type" and lens_types and lens_type_id not in {str(t["id"]) for t in lens_types}:
-            lens_type_id = str(lens_types[0]["id"])
+        lens_types, lens_items = [], []
+        if mode == "item":
+            # 삭제되지 않은 품목/품명만. 미선택·잘못된 값이면 각 목록의 첫 항목으로 맞춘다.
+            lens_types = conn.execute(
+                "SELECT id, name FROM company_master.lens_types WHERE COALESCE(is_deleted, 0) = 0 "
+                "ORDER BY sort_order, id"
+            ).fetchall()
+            if lens_types and lens_type_id not in {str(t["id"]) for t in lens_types}:
+                lens_type_id = str(lens_types[0]["id"])
+            if lens_type_id:
+                lens_items = conn.execute(
+                    "SELECT id, name FROM company_master.lens_type_items "
+                    "WHERE lens_type_id = ? AND COALESCE(is_deleted, 0) = 0 ORDER BY name, id",
+                    (lens_type_id,),
+                ).fetchall()
+            if lens_item_id not in {str(i["id"]) for i in lens_items}:
+                lens_item_id = str(lens_items[0]["id"]) if lens_items else ""
 
         # 품목·품명이 둘 다 있는 줄만 집계 (RX 매출 줄 / 기능 도입 전 과거 줄은 제외)
         where = ["si.lens_type_id IS NOT NULL", "si.lens_type_item_id IS NOT NULL",
                  "si.item_date BETWEEN ? AND ?"]
         params = [start, end]
-        if company_id:
+        if mode == "company" and company_id:
             where.append("s.company_id = ?")
             params.append(company_id)
-        if mode == "type":
-            where.append("si.lens_type_id = ?")
-            params.append(lens_type_id or -1)
+        if mode == "item":
+            where += ["si.lens_type_id = ?", "si.lens_type_item_id = ?"]
+            params += [lens_type_id or -1, lens_item_id or -1]
 
-        # 거래처별 모드: 품목 > 품명 / 품목별 모드: 거래처 > 품명 으로 묶는다.
-        group_col = "s.company_id" if mode == "type" else "si.lens_type_id"
+        # 거래처별: 품목+품명 단위 / 품명별: 거래처 단위로 묶는다.
+        group_by = "s.company_id" if mode == "item" else "si.lens_type_id, si.lens_type_item_id"
         raw = conn.execute(
-            f"""SELECT {group_col} AS group_id, si.lens_type_item_id,
+            f"""SELECT si.lens_type_id, si.lens_type_item_id, s.company_id,
                        lt.name AS type_name, COALESCE(lt.sort_order, 0) AS type_sort,
                        c.name AS company_name,
                        lti.name AS item_name, COALESCE(lti.buy_cost, 0) AS buy_cost,
@@ -294,7 +305,7 @@ def lens_sales():
                 LEFT JOIN company_master.lens_types lt ON si.lens_type_id = lt.id
                 LEFT JOIN company_master.lens_type_items lti ON si.lens_type_item_id = lti.id
                 WHERE {' AND '.join(where)}
-                GROUP BY {group_col}, si.lens_type_item_id""",
+                GROUP BY {group_by}""",
             params,
         ).fetchall()
 
@@ -306,35 +317,35 @@ def lens_sales():
                 continue
             sale_amt = _safe_float(r["sale_amt"])
             buy_amt = sale_qty * _safe_float(r["buy_cost"])
-            group_name = (r["company_name"] or "(거래처 미지정)") if mode == "type" else (r["type_name"] or "-")
             items.append({
-                "group_id": r["group_id"], "group_name": group_name,
-                "type_sort": r["type_sort"], "item_name": r["item_name"] or "-",
+                "type_id": r["lens_type_id"], "type_name": r["type_name"] or "-", "type_sort": r["type_sort"],
+                "item_name": r["item_name"] or "-", "company_name": r["company_name"] or "(거래처 미지정)",
                 "sale_qty": sale_qty, "sale_amt": sale_amt,
                 "ret_qty": ret_qty, "ret_amt": abs(_safe_float(r["ret_amt"])),
                 "buy_amt": buy_amt,
                 "margin": ((sale_amt - buy_amt) / sale_amt * 100) if sale_amt else 0,
             })
-
-        groups = {}
-        for it in items:
-            g = groups.setdefault(it["group_id"], {"name": it["group_name"], "sort": it["type_sort"], "items": []})
-            g["items"].append(it)
-        groups = list(groups.values())
-        for g in groups:
-            g["items"].sort(key=lambda x: x["item_name"])   # 그룹 안: 품명 이름순
-            g["sub"] = _lens_sales_sum(g["items"])
-        if mode == "type":
-            # 거래처: 판매액 많은 순 (같으면 거래처 이름순)
-            groups.sort(key=lambda g: (-g["sub"]["sale_amt"], g["name"]))
-        else:
-            # 품목: sort_order 순 (같으면 품목 id 순)
-            groups.sort(key=lambda g: (g["sort"], g["items"][0]["group_id"] or 0))
         grand = _lens_sales_sum(items)
 
+        groups = []
+        if mode == "item":
+            # 거래처 한 줄씩, 판매액 많은 순 (같으면 거래처 이름순)
+            items.sort(key=lambda x: (-x["sale_amt"], x["company_name"]))
+        else:
+            # 품목 sort_order → (동순위면 품목 id) → 품명 이름순으로 품목 그룹 구성
+            items.sort(key=lambda x: (x["type_sort"], x["type_id"], x["item_name"]))
+            for it in items:
+                if not groups or groups[-1]["type_id"] != it["type_id"]:
+                    groups.append({"type_id": it["type_id"], "name": it["type_name"], "items": []})
+                groups[-1]["items"].append(it)
+            for g in groups:
+                g["sub"] = _lens_sales_sum(g["items"])
+
         return render_template(
-            "lens_sales.html", groups=groups, grand=grand, companies=companies, lens_types=lens_types,
-            mode=mode, company_id=company_id, lens_type_id=lens_type_id, start=start, end=end,
+            "lens_sales.html", mode=mode, groups=groups, rows=items, grand=grand,
+            companies=companies, lens_types=lens_types, lens_items=lens_items,
+            company_id=company_id, lens_type_id=lens_type_id, lens_item_id=lens_item_id,
+            start=start, end=end,
         )
     except Exception as e:
         app.logger.exception("lens_sales 처리 중 오류")
