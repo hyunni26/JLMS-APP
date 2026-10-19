@@ -13,12 +13,20 @@
     <div class="filter-row" style="margin-bottom:0;">
       <div class="ls-mode">
         <label class="{{ 'on' if mode == 'company' }}"><input type="radio" name="mode" value="company" {{ "checked" if mode == "company" }} onchange="this.form.submit()">거래처별</label>
-        <label class="{{ 'on' if mode == 'type' }}"><input type="radio" name="mode" value="type" {{ "checked" if mode == "type" }} onchange="this.form.submit()">품목별</label>
+        <label class="{{ 'on' if mode == 'item' }}"><input type="radio" name="mode" value="item" {{ "checked" if mode == "item" }} onchange="this.form.submit()">품명별</label>
       </div>
-      {% if mode == "type" %}
-      <select name="lens_type_id" style="flex:1; min-width:0;" onchange="this.form.submit()">
+      {% if mode == "item" %}
+      <select name="lens_type_id" style="flex:1; min-width:0;"
+              onchange="this.form.lens_item_id.disabled = true; this.form.submit()">
         {% for t in lens_types %}
         <option value="{{ t.id }}" {{ "selected" if lens_type_id|string == t.id|string }}>{{ t.name }}</option>
+        {% endfor %}
+      </select>
+      <select name="lens_item_id" style="flex:1 1 100%; min-width:0;" onchange="this.form.submit()">
+        {% for i in lens_items %}
+        <option value="{{ i.id }}" {{ "selected" if lens_item_id|string == i.id|string }}>{{ i.name }}</option>
+        {% else %}
+        <option value="">(등록된 품명 없음)</option>
         {% endfor %}
       </select>
       {% else %}
@@ -64,6 +72,9 @@
   /* 품목별 계 행 */
   .ls tbody.grp tr.sub td { background: #DCE3F0; font-weight: bold; color: var(--navy-dark); }
   .ls tbody.grp tr.sub td.c2 { background: #DCE3F0; text-align: center; }
+  /* 품명별: 거래처 열만 고정 */
+  .ls.by-item .c1 { min-width: 120px; max-width: 120px; border-right: 1px solid var(--border); }
+  .ls.by-item tbody tr:nth-child(even) td.c1 { background: #F0F2F7; }
   /* 전체 합계 (하단 고정) */
   .ls tfoot td {
     position: sticky; bottom: 0; z-index: 2; font-weight: bold;
@@ -74,15 +85,36 @@
 </style>
 
 <div class="card ls-scroll">
-  <table class="ls">
+  <table class="ls{{ ' by-item' if mode == 'item' }}">
     <thead>
       <tr>
-        <th class="c1">{{ "거래처" if mode == "type" else "품목" }}</th><th class="c2">품명</th>
+        {% if mode == "item" %}
+        <th class="c1">거래처</th>
+        {% else %}
+        <th class="c1">품목</th><th class="c2">품명</th>
+        {% endif %}
         <th class="num">판매량</th><th class="num">판매액</th>
         <th class="num">반입량</th><th class="num">반입액</th>
         <th class="num">구매액</th><th class="num">마진율(%)</th>
       </tr>
     </thead>
+    {% if mode == "item" %}
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td class="c1">{{ r.company_name }}</td>
+        <td class="num">{{ "%.1f"|format(r.sale_qty) }}</td>
+        <td class="num">{{ "{:,.0f}".format(r.sale_amt) }}</td>
+        <td class="num">{{ "%.1f"|format(r.ret_qty) }}</td>
+        <td class="num">{{ "{:,.0f}".format(r.ret_amt) }}</td>
+        <td class="num">{{ "{:,.0f}".format(r.buy_amt) }}</td>
+        <td class="num">{{ "%.1f"|format(r.margin) }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="empty">해당 조건의 판매 데이터가 없습니다.</td></tr>
+      {% endfor %}
+    </tbody>
+    {% else %}
     {% for g in groups %}
     <tbody class="grp">
       {% for r in g["items"] %}
@@ -113,10 +145,11 @@
       <tr><td colspan="8" class="empty">해당 조건의 판매 데이터가 없습니다.</td></tr>
     </tbody>
     {% endfor %}
-    {% if groups %}
+    {% endif %}
+    {% if rows %}
     <tfoot>
       <tr>
-        <td class="c1">합계</td><td class="c2"></td>
+        <td class="c1">합계</td>{% if mode != "item" %}<td class="c2"></td>{% endif %}
         <td class="num">{{ "%.1f"|format(grand.sale_qty) }}</td>
         <td class="num">{{ "{:,.0f}".format(grand.sale_amt) }}</td>
         <td class="num">{{ "%.1f"|format(grand.ret_qty) }}</td>
