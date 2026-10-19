@@ -231,6 +231,97 @@ def _safe_float(v, default=0.0):
         return default
 
 
+# ---------------- 2-1. 렌즈 판매현황 (거래처 원장에 저장된 명세서 항목 기준) ----------------
+def _lens_sales_sum(rows):
+    """품목 계 / 전체 합계 행 계산. 마진율은 합산된 판매액·구매액으로 다시 계산한다."""
+    t = {k: sum(r[k] for r in rows) for k in ("sale_qty", "sale_amt", "ret_qty", "ret_amt", "buy_amt")}
+    t["margin"] = ((t["sale_amt"] - t["buy_amt"]) / t["sale_amt"] * 100) if t["sale_amt"] else 0
+    return t
+
+
+@app.route("/lens-sales")
+@login_required
+def lens_sales():
+    today_kst = now_kst()
+    start = request.args.get("start", "").strip() or today_kst.replace(day=1).strftime("%Y-%m-%d")
+    end = request.args.get("end", "").strip() or today_kst.strftime("%Y-%m-%d")
+    company_id = request.args.get("company_id", "").strip()
+
+    conn = None
+    try:
+        conn = get_db()
+        if conn is None:
+            flash("먼저 데이터를 불러와주세요.")
+            return redirect(url_for("dashboard"))
+
+        companies = conn.execute("SELECT id, name FROM company_master.companies ORDER BY name").fetchall()
+
+        # 품목·품명이 둘 다 있는 줄만 집계 (RX 매출 줄 / 기능 도입 전 과거 줄은 제외)
+        where = ["si.lens_type_id IS NOT NULL", "si.lens_type_item_id IS NOT NULL",
+                 "si.item_date BETWEEN ? AND ?"]
+        params = [start, end]
+        if company_id:
+            where.append("s.company_id = ?")
+            params.append(company_id)
+
+        raw = conn.execute(
+            f"""SELECT si.lens_type_id, si.lens_type_item_id,
+                       lt.name AS type_name, COALESCE(lt.sort_order, 0) AS type_sort,
+                       lti.name AS item_name, COALESCE(lti.buy_cost, 0) AS buy_cost,
+                       COALESCE(SUM(CASE WHEN si.quantity > 0 THEN si.quantity END), 0) AS sale_qty,
+                       COALESCE(SUM(CASE WHEN si.quantity > 0 THEN si.amount END), 0)   AS sale_amt,
+                       COALESCE(SUM(CASE WHEN si.quantity < 0 THEN si.quantity END), 0) AS ret_qty,
+                       COALESCE(SUM(CASE WHEN si.quantity < 0 THEN si.amount END), 0)   AS ret_amt
+                FROM main.statement_items si
+                JOIN main.statements s ON si.statement_id = s.id
+                LEFT JOIN company_master.lens_types lt ON si.lens_type_id = lt.id
+                LEFT JOIN company_master.lens_type_items lti ON si.lens_type_item_id = lti.id
+                WHERE {' AND '.join(where)}
+                GROUP BY si.lens_type_id, si.lens_type_item_id""",
+            params,
+        ).fetchall()
+
+        items = []
+        for r in raw:
+            sale_qty = _safe_float(r["sale_qty"])
+            ret_qty = abs(_safe_float(r["ret_qty"]))
+            if not sale_qty and not ret_qty:
+                continue
+            sale_amt = _safe_float(r["sale_amt"])
+            buy_amt = sale_qty * _safe_float(r["buy_cost"])
+            items.append({
+                "type_id": r["lens_type_id"], "type_name": r["type_name"] or "-",
+                "type_sort": r["type_sort"], "item_name": r["item_name"] or "-",
+                "sale_qty": sale_qty, "sale_amt": sale_amt,
+                "ret_qty": ret_qty, "ret_amt": abs(_safe_float(r["ret_amt"])),
+                "buy_amt": buy_amt,
+                "margin": ((sale_amt - buy_amt) / sale_amt * 100) if sale_amt else 0,
+            })
+        # 정렬: 품목 sort_order → (동순위면 품목 id) → 품명 이름순
+        items.sort(key=lambda x: (x["type_sort"], x["type_id"], x["item_name"]))
+
+        groups = []
+        for it in items:
+            if not groups or groups[-1]["type_id"] != it["type_id"]:
+                groups.append({"type_id": it["type_id"], "type_name": it["type_name"], "items": []})
+            groups[-1]["items"].append(it)
+        for g in groups:
+            g["sub"] = _lens_sales_sum(g["items"])
+        grand = _lens_sales_sum(items)
+
+        return render_template(
+            "lens_sales.html", groups=groups, grand=grand, companies=companies,
+            company_id=company_id, start=start, end=end,
+        )
+    except Exception as e:
+        app.logger.exception("lens_sales 처리 중 오류")
+        flash(f"렌즈 판매현황 조회 중 오류가 발생했습니다: {type(e).__name__}: {e}")
+        return redirect(url_for("dashboard"))
+    finally:
+        if conn is not None:
+            conn.close()
+
+
 @app.route("/receivables")
 @login_required
 def receivables():
