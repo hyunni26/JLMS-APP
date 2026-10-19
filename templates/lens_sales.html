@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="breadcrumb"><a href="{{ url_for('dashboard') }}">← 목록</a></div>
+<h1>렌즈 판매현황</h1>
+
+<div class="card">
+  <form method="get" class="filter-row" style="margin-bottom:0;">
+    <input type="date" name="start" value="{{ start }}" onchange="this.form.submit()">
+    <span style="color:var(--text-light);">~</span>
+    <input type="date" name="end" value="{{ end }}" onchange="this.form.submit()">
+    <select name="company_id" style="flex:1; min-width:140px;" onchange="this.form.submit()">
+      <option value="">전체 거래처</option>
+      {% for c in companies %}
+      <option value="{{ c.id }}" {{ "selected" if company_id|string == c.id|string }}>{{ c.name }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn ghost">조회</button>
+  </form>
+</div>
+
+<style>
+  .ls-scroll {
+    overflow: auto; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y;
+    max-height: calc(100vh - 250px); max-height: calc(100dvh - 250px);
+    padding: 0;
+  }
+  .ls { border-collapse: separate; border-spacing: 0; }
+  .ls thead th { position: sticky; top: 0; z-index: 2; }
+  .ls .c1, .ls .c2 { position: sticky; z-index: 1; background: var(--card); }
+  .ls .c1 { left: 0; min-width: 84px; max-width: 84px; overflow: hidden; text-overflow: ellipsis; }
+  .ls .c2 { left: 84px; border-right: 1px solid var(--border); }
+  .ls tbody tr:nth-child(even) .c1, .ls tbody tr:nth-child(even) .c2 { background: #F0F2F7; }
+  .ls thead th.c1, .ls thead th.c2 { z-index: 3; background: var(--navy); }
+  .ls tr.sub td { font-weight: bold; border-top: 1px solid var(--navy); }
+  .ls tfoot td {
+    position: sticky; bottom: 0; z-index: 2; font-weight: bold;
+    background: var(--gold); color: var(--navy-dark); border-bottom: none;
+  }
+  .ls tfoot td.c1, .ls tfoot td.c2 { z-index: 3; background: var(--gold); }
+</style>
+
+<div class="card ls-scroll">
+  <table class="ls">
+    <thead>
+      <tr>
+        <th class="c1">품목</th><th class="c2">품명</th>
+        <th class="num">판매량</th><th class="num">판매액</th>
+        <th class="num">반입량</th><th class="num">반입액</th>
+        <th class="num">구매액</th><th class="num">마진율(%)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for g in groups %}
+        {% for r in g["items"] %}
+        <tr>
+          <td class="c1">{{ r.type_name }}</td><td class="c2">{{ r.item_name }}</td>
+          <td class="num">{{ "%.1f"|format(r.sale_qty) }}</td>
+          <td class="num">{{ "{:,.0f}".format(r.sale_amt) }}</td>
+          <td class="num">{{ "%.1f"|format(r.ret_qty) }}</td>
+          <td class="num">{{ "{:,.0f}".format(r.ret_amt) }}</td>
+          <td class="num">{{ "{:,.0f}".format(r.buy_amt) }}</td>
+          <td class="num">{{ "%.1f"|format(r.margin) }}</td>
+        </tr>
+        {% endfor %}
+        {% set s = g.sub %}
+        <tr class="sub">
+          <td class="c1">{{ g.type_name }}</td><td class="c2">계</td>
+          <td class="num">{{ "%.1f"|format(s.sale_qty) }}</td>
+          <td class="num">{{ "{:,.0f}".format(s.sale_amt) }}</td>
+          <td class="num">{{ "%.1f"|format(s.ret_qty) }}</td>
+          <td class="num">{{ "{:,.0f}".format(s.ret_amt) }}</td>
+          <td class="num">{{ "{:,.0f}".format(s.buy_amt) }}</td>
+          <td class="num">{{ "%.1f"|format(s.margin) }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="8" class="empty">해당 조건의 판매 데이터가 없습니다.</td></tr>
+      {% endfor %}
+    </tbody>
+    {% if groups %}
+    <tfoot>
+      <tr>
+        <td class="c1">합계</td><td class="c2"></td>
+        <td class="num">{{ "%.1f"|format(grand.sale_qty) }}</td>
+        <td class="num">{{ "{:,.0f}".format(grand.sale_amt) }}</td>
+        <td class="num">{{ "%.1f"|format(grand.ret_qty) }}</td>
+        <td class="num">{{ "{:,.0f}".format(grand.ret_amt) }}</td>
+        <td class="num">{{ "{:,.0f}".format(grand.buy_amt) }}</td>
+        <td class="num">{{ "%.1f"|format(grand.margin) }}</td>
+      </tr>
+    </tfoot>
+    {% endif %}
+  </table>
+</div>
+{% endblock %}
