@@ -990,6 +990,24 @@ def _yearly_performance(conn, year):
         r["shipment_txt"] = _fmt_qty(r["shipment"])
         r["rx_txt"] = _fmt_qty(r["rx"])
         r["amount_man"] = _man_won(r["amount"])
+
+    # 누계: 1월부터 그 달까지 당월 값 합 (수동 달도 당월 값 그대로 누적, 금액은 원 단위 누적 후 만원 반올림)
+    # 표시 범위: 지난해 = 12월까지 / 올해 = 이번 달까지 / 내년 이후 = 없음 (범위 밖은 빈칸)
+    today = now_kst()
+    last_month = 12 if year < today.year else (today.month if year == today.year else 0)
+    acc = {"production": 0.0, "shipment": 0.0, "rx": 0.0, "amount": 0.0}
+    for r in months:
+        for k in acc:
+            acc[k] += r[k]
+        if r["month"] <= last_month:
+            r["cum"] = {
+                "production_txt": _fmt_qty(acc["production"]),
+                "shipment_txt": _fmt_qty(acc["shipment"]),
+                "rx_txt": _fmt_qty(acc["rx"]),
+                "amount_man": _man_won(acc["amount"]),
+            }
+        else:
+            r["cum"] = None
     return months, total
 
 
