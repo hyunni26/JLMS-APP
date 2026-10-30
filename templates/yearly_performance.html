@@ -36,13 +36,8 @@
   .yp-table thead th.c-m { z-index: 3; color: white; background: var(--navy); }
   /* 누계 칸: 아주 연한 배경 */
   .yp-table td.cum { background: #EEF2F9; }
-  /* 수동 입력 달 (데스크톱과 같은 색): 입력 전 / 입력 후 — 누계 칸·월 칸도 노란 배경 유지 */
-  .yp-table tr.m-empty td, .yp-table tbody tr.m-empty td.c-m { background: #FFFBEB; }
-  .yp-table tr.m-entered td, .yp-table tbody tr.m-entered td.c-m { background: #FEF3C7; }
   .yp-table tfoot td { position: sticky; bottom: 0; z-index: 1; background: var(--gold); color: var(--navy-dark); font-weight: bold; border-top: 2px solid var(--navy); }
   .yp-table tfoot td.c-m { z-index: 3; background: var(--gold); color: var(--navy-dark); }
-  .yp-legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--text-light); margin-top: 10px; flex: 0 0 auto; }
-  .yp-legend i { display: inline-block; width: 12px; height: 12px; border: 1px solid var(--border); border-radius: 3px; vertical-align: -2px; margin-right: 4px; }
 
   .yp-chart-box { position: relative; flex: 1; min-height: 240px; }
   .yp-chart-msg { color: var(--text-light); font-size: 13px; text-align: center; padding: 40px 0; }
@@ -87,7 +82,7 @@
       <tbody>
         {% for r in months %}
         {% set c = r.cum %}
-        <tr class="{{ 'm-' ~ r.manual if r.manual }}">
+        <tr>
           <td class="c-m">{{ r.month }}월</td>
           <td>{{ r.production_txt }}</td><td class="cum">{{ c.production_txt if c }}</td>
           <td>{{ r.shipment_txt }}</td><td class="cum">{{ c.shipment_txt if c }}</td>
@@ -107,12 +102,6 @@
       </tfoot>
     </table>
   </div>
-  {% if months|selectattr('manual')|list %}
-  <div class="yp-legend">
-    <span><i style="background:#FEF3C7;"></i>수동 입력 달</span>
-    <span><i style="background:#FFFBEB;"></i>수동 입력 전 (0으로 표시)</span>
-  </div>
-  {% endif %}
 </div>
 {% else %}
 <div class="card yp-fill">
