@@ -912,6 +912,130 @@ def production_history():
             conn.close()
 
 
+# ---------------- 7. 연간 실적비교 (전년도 vs 선택 년도, 월별) ----------------
+# 데스크톱 앱 사용 시작 달. 이 달 이전은 관리자가 수동 입력한 값(main.yearly_manual_performance)을 쓴다.
+AUTO_PERFORMANCE_START = "2026-10"
+
+
+def _man_won(won):
+    """원 → 만원, 반올림(0.5는 올림) 정수. 예: 3,185,000원 → 319"""
+    v = _safe_float(won) / 10000
+    return int(v + 0.5) if v >= 0 else -int(-v + 0.5)
+
+
+def _fmt_qty(v):
+    """수량: 천 단위 콤마, 소수가 있으면 한 자리 (1,200 / 1,200.5)"""
+    v = round(_safe_float(v), 1)
+    return f"{v:,.0f}" if v == int(v) else f"{v:,.1f}"
+
+
+def _yearly_performance(conn, year):
+    """한 해 1~12월의 여벌 생산 / 여벌 출고 / 의뢰건 출고 / 총 합계 금액(원)."""
+    y0, y1 = f"{year}-01-01", f"{year}-12-31"
+
+    production = {r["ym"]: r["qty"] for r in conn.execute(
+        """SELECT substr(work_date, 1, 7) AS ym, COALESCE(SUM(output_qty), 0) AS qty
+           FROM hardroom.hardroom_logs WHERE work_date BETWEEN ? AND ? GROUP BY ym""", (y0, y1))}
+    sales = {r["ym"]: r for r in conn.execute(
+        """SELECT substr(item_date, 1, 7) AS ym,
+                  COALESCE(SUM(CASE WHEN lens_type_id IS NOT NULL AND lens_type_item_id IS NOT NULL THEN quantity END), 0) AS lens_qty,
+                  COALESCE(SUM(CASE WHEN lens_type_id IS NOT NULL AND lens_type_item_id IS NOT NULL THEN amount END), 0) AS lens_amount,
+                  COALESCE(SUM(CASE WHEN source_key LIKE 'night:%' THEN amount END), 0) AS rx_amount
+           FROM main.statement_items WHERE item_date BETWEEN ? AND ? GROUP BY ym""", (y0, y1))}
+    rx_work = {r["ym"]: r["qty"] for r in conn.execute(
+        """SELECT substr(e.work_date, 1, 7) AS ym,
+                  COALESCE(SUM(COALESCE(ni.work_qty, 0) + COALESCE(ni.cut_qty, 0) + COALESCE(ni.rework_qty, 0)), 0) AS qty
+           FROM rx.night_work_items ni JOIN rx.night_work_entries e ON ni.entry_id = e.id
+           WHERE e.work_date BETWEEN ? AND ? GROUP BY ym""", (y0, y1))}
+
+    # 수동 입력 테이블은 최근에 생겨 예전 DB 사본에는 없을 수 있다 → 없으면 수동 달은 0
+    manual = {}
+    has_manual = conn.execute(
+        "SELECT 1 FROM main.sqlite_master WHERE type='table' AND name='yearly_manual_performance'"
+    ).fetchone()
+    if has_manual:
+        manual = {r["ym"]: r for r in conn.execute(
+            """SELECT ym, spare_production, spare_shipment, rx_shipment, amount
+               FROM main.yearly_manual_performance WHERE ym BETWEEN ? AND ?""",
+            (f"{year}-01", f"{year}-12"))}
+
+    months = []
+    for m in range(1, 13):
+        ym = f"{year}-{m:02d}"
+        if ym < AUTO_PERFORMANCE_START:
+            r = manual.get(ym)
+            row = {
+                "production": _safe_float(r["spare_production"]) if r else 0.0,
+                "shipment": _safe_float(r["spare_shipment"]) if r else 0.0,
+                "rx": _safe_float(r["rx_shipment"]) if r else 0.0,
+                "amount": _safe_float(r["amount"]) if r else 0.0,
+                "manual": "entered" if r else "empty",   # 수동 달: 입력됨 / 입력 전
+            }
+        else:
+            sr = sales.get(ym)
+            row = {
+                "production": _safe_float(production.get(ym)),
+                "shipment": _safe_float(sr["lens_qty"]) if sr else 0.0,
+                "rx": _safe_float(rx_work.get(ym)),
+                "amount": (_safe_float(sr["lens_amount"]) + _safe_float(sr["rx_amount"])) if sr else 0.0,
+                "manual": "",
+            }
+        row["month"] = m
+        months.append(row)
+
+    # 합계: 원 단위로 먼저 더한 뒤 만원 반올림 (월별 반올림 값을 더하지 않음)
+    total = {k: sum(r[k] for r in months) for k in ("production", "shipment", "rx", "amount")}
+    for r in months + [total]:
+        r["production_txt"] = _fmt_qty(r["production"])
+        r["shipment_txt"] = _fmt_qty(r["shipment"])
+        r["rx_txt"] = _fmt_qty(r["rx"])
+        r["amount_man"] = _man_won(r["amount"])
+    return months, total
+
+
+@app.route("/yearly-performance")
+@login_required
+def yearly_performance():
+    this_year = now_kst().year
+    try:
+        year = int(request.args.get("year", this_year))
+        if not 2000 <= year <= 2100:
+            year = this_year
+    except (TypeError, ValueError):
+        year = this_year
+
+    conn = None
+    try:
+        conn = get_db()
+        if conn is None:
+            flash("먼저 데이터를 불러와주세요.")
+            return redirect(url_for("dashboard"))
+
+        months, total = _yearly_performance(conn, year)
+        prev_months, prev_total = _yearly_performance(conn, year - 1)
+
+        # 그래프용 (금액은 만원 단위)
+        chart = {
+            "labels": [f"{m}월" for m in range(1, 13)],
+            "prev": {k: [r[k] for r in prev_months] for k in ("production", "shipment", "rx")},
+            "cur": {k: [r[k] for r in months] for k in ("production", "shipment", "rx")},
+        }
+        chart["prev"]["amount"] = [r["amount_man"] for r in prev_months]
+        chart["cur"]["amount"] = [r["amount_man"] for r in months]
+
+        return render_template(
+            "yearly_performance.html", year=year, months=months, total=total,
+            prev_total=prev_total, chart=chart,
+        )
+    except Exception as e:
+        app.logger.exception("yearly_performance 처리 중 오류")
+        flash(f"연간 실적비교 조회 중 오류가 발생했습니다: {type(e).__name__}: {e}")
+        return redirect(url_for("dashboard"))
+    finally:
+        if conn is not None:
+            conn.close()
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
