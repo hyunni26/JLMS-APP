@@ -1003,6 +1003,7 @@ def yearly_performance():
             year = this_year
     except (TypeError, ValueError):
         year = this_year
+    view = "chart" if request.args.get("view") == "chart" else "table"   # 표(기본) / 그래프
 
     conn = None
     try:
@@ -1024,7 +1025,7 @@ def yearly_performance():
         chart["cur"]["amount"] = [r["amount_man"] for r in months]
 
         return render_template(
-            "yearly_performance.html", year=year, months=months, total=total,
+            "yearly_performance.html", year=year, view=view, months=months, total=total,
             prev_total=prev_total, chart=chart,
         )
     except Exception as e:
