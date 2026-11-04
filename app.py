@@ -596,8 +596,18 @@ def night_work():
         for idx, r in enumerate(result_rows, start=1):
             r["rank"] = idx
 
+        # 맨 아래 총합 행: 작업총량·재작업량 합계, 재작업비율은 합계 기준으로 다시 계산
+        grand_total = None
+        if result_rows:
+            grand_total = {
+                "total_qty": sum(r["total_qty"] for r in result_rows),
+                "rework_qty": sum(r["rework_qty"] for r in result_rows),
+            }
+            grand_total["rework_ratio"] = _rework_ratio(grand_total["rework_qty"], grand_total["total_qty"])
+
         return render_template(
-            "night_work.html", rows=result_rows, start=start, end=end, view=view, sort_by=sort_by,
+            "night_work.html", rows=result_rows, grand_total=grand_total,
+            start=start, end=end, view=view, sort_by=sort_by,
         )
 
     # 거래처별: 같은 거래처+처리종류 조합이 기간 내 여러 날짜에 걸쳐 있으면 하나로 합산
