@@ -519,7 +519,8 @@ def _fmt_log_num(v, blank_zero=True):
 
 def _rx_daily_log_history(conn):
     today = now_kst()
-    start = request.args.get("start", "").strip() or today.replace(day=1).strftime("%Y-%m-%d")
+    # 기본 기간: 오늘 ~ 오늘
+    start = request.args.get("start", "").strip() or today.strftime("%Y-%m-%d")
     end = request.args.get("end", "").strip() or today.strftime("%Y-%m-%d")
     ctx = dict(view="dailylog", start=start, end=end, rows=[], log_total=None,
                work_days=None, defect_rate=None, final_yield=None, period_error=None)
