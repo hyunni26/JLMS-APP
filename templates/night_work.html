@@ -7,6 +7,7 @@
   <a href="{{ url_for('night_work', view='company', start=start, end=end) }}" class="{{ 'active' if view=='company' }}">거래처별</a>
   <a href="{{ url_for('night_work', view='total', start=start, end=end) }}" class="{{ 'active' if view=='total' }}">총합계</a>
   <a href="{{ url_for('night_work', view='ranking', start=start, end=end) }}" class="{{ 'active' if view=='ranking' }}">작업현황</a>
+  <a href="{{ url_for('night_work', view='dailylog') }}" class="{{ 'active' if view=='dailylog' }}">RX일지내역</a>
 </div>
 
 <form method="get" class="filter-row" id="dateForm">
@@ -22,6 +23,70 @@
   {% endif %}
 </form>
 
+{% if view == 'dailylog' %}
+<style>
+  .rl-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .rl-days { font-size: 14px; color: var(--navy); font-weight: 600; }
+  .rl-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+  .rl-badge { padding: 5px 10px; border-radius: 999px; font-size: 13px; font-weight: 700; }
+  .rl-badge.defect { background: #FDECEA; color: #B3261E; }
+  .rl-badge.yield { background: #E8F0FE; color: var(--navy); }
+  .rl-table { border-collapse: separate; border-spacing: 0; }
+  .rl-table th, .rl-table td { text-align: center; }
+  .rl-table th { vertical-align: middle; }
+  .rl-table tr.h1 th { border-bottom: 1px solid rgba(255,255,255,.25); }
+  .rl-table thead th + th, .rl-table tr.h2 th { border-left: 1px solid rgba(255,255,255,.18); }
+  /* 가로 스크롤 시 번호·멀티종류 고정 */
+  .rl-table .s1, .rl-table .s2 { position: sticky; z-index: 1; background: var(--card); }
+  .rl-table .s1 { left: 0; min-width: 40px; max-width: 40px; }
+  .rl-table .s2 { left: 40px; border-right: 1px solid var(--border); }
+  .rl-table tbody tr:nth-child(even) .s1, .rl-table tbody tr:nth-child(even) .s2 { background: #F0F2F7; }
+  .rl-table thead th.s1, .rl-table thead th.s2 { z-index: 2; background: var(--navy); }
+  .rl-table tfoot td { background: var(--gold); color: var(--navy-dark); font-weight: bold; border-top: 2px solid var(--navy); border-bottom: none; }
+  .rl-table tfoot td.s1 { z-index: 2; background: var(--gold); }
+</style>
+
+{% if period_error %}
+<div class="card" style="color:#B3261E;">{{ period_error }}</div>
+{% else %}
+<div class="rl-head">
+  <span class="rl-days">작업일 {{ work_days }}일</span>
+  <span class="rl-badges">
+    <span class="rl-badge defect">불량율 {{ defect_rate or '-' }}</span>
+    <span class="rl-badge yield">최종 수율 {{ final_yield or '-' }}</span>
+  </span>
+</div>
+<div class="card table-scroll">
+  <table class="rl-table">
+    <thead>
+      <tr class="h1">
+        <th rowspan="2" class="s1">번호</th><th rowspan="2" class="s2">멀티종류</th>
+        <th colspan="3">수량</th><th>불량</th>
+      </tr>
+      <tr class="h2">
+        <th>정품</th><th>컷팅</th><th>재</th><th>작업불량 수량</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td class="s1">{{ r.no }}</td><td class="s2">{{ r.name }}</td>
+        <td>{{ r.genuine }}</td><td>{{ r.cutting }}</td><td>{{ r.redo }}</td><td>{{ r.defect }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="empty">일지에 쓰는 작업종류가 없습니다.</td></tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td colspan="2" class="s1">계</td>
+        <td>{{ log_total.genuine }}</td><td>{{ log_total.cutting }}</td><td>{{ log_total.redo }}</td><td>{{ log_total.defect }}</td>
+      </tr>
+    </tfoot>
+  </table>
+</div>
+{% endif %}
+{% else %}
 <div class="card table-scroll">
   <table>
     {% if view == 'total' %}
@@ -93,4 +158,5 @@
     {% endif %}
   </table>
 </div>
+{% endif %}
 {% endblock %}
