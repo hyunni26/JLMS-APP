@@ -498,6 +498,115 @@ def lens_types():
 
 
 # ---------------- 5. RX(야간) 작업 현황 ----------------
+# ---------------- RX일지내역 (RX 작업 현황 > RX일지내역 탭) ----------------
+def _has_table(conn, schema, table):
+    return conn.execute(
+        f"SELECT 1 FROM {schema}.sqlite_master WHERE type='table' AND name=?", (table,)
+    ).fetchone() is not None
+
+
+def _has_column(conn, schema, table, column):
+    return any(r["name"] == column for r in conn.execute(f"PRAGMA {schema}.table_info({table})"))
+
+
+def _fmt_log_num(v, blank_zero=True):
+    """정수면 정수, 소수가 있으면 그대로(2.5). 콤마 없음. blank_zero면 0은 빈칸."""
+    v = round(_safe_float(v), 4)
+    if v == 0 and blank_zero:
+        return ""
+    return str(int(v)) if v == int(v) else (f"{v:f}".rstrip("0").rstrip("."))
+
+
+def _rx_daily_log_history(conn):
+    today = now_kst()
+    start = request.args.get("start", "").strip() or today.replace(day=1).strftime("%Y-%m-%d")
+    end = request.args.get("end", "").strip() or today.strftime("%Y-%m-%d")
+    ctx = dict(view="dailylog", start=start, end=end, rows=[], log_total=None,
+               work_days=None, defect_rate=None, final_yield=None, period_error=None)
+    if start > end:
+        ctx["period_error"] = "시작일이 종료일보다 늦습니다. 기간을 다시 선택해주세요."
+        return render_template("night_work.html", **ctx)
+
+    # 예전 DB 사본 대비: 테이블/컬럼이 없으면 없는 대로 처리
+    has_logs = _has_table(conn, "rx", "rx_daily_logs") and _has_table(conn, "rx", "rx_daily_log_items")
+    has_qty_saved = has_logs and _has_column(conn, "rx", "rx_daily_logs", "qty_saved")
+    has_in_log = _has_column(conn, "company_master", "process_types", "in_daily_log")
+    in_log_expr = "COALESCE(in_daily_log, 1)" if has_in_log else "1"
+
+    # 정품/컷팅/재: 일지를 저장(qty_saved=1)한 날은 일지 값, 그 외 날은 RX 작업입력 합계 (여벌 제외) → 작업종류별로 더함
+    qty = {}
+    def _add(rows):
+        for r in rows:
+            q = qty.setdefault(r["pid"], [0.0, 0.0, 0.0])
+            q[0] += _safe_float(r["genuine"]); q[1] += _safe_float(r["cutting"]); q[2] += _safe_float(r["redo"])
+    if has_qty_saved:
+        _add(conn.execute(
+            """SELECT i.process_type_id AS pid, COALESCE(SUM(i.genuine),0) AS genuine,
+                      COALESCE(SUM(i.cutting),0) AS cutting, COALESCE(SUM(i.redo),0) AS redo
+               FROM rx.rx_daily_log_items i JOIN rx.rx_daily_logs l ON l.id = i.log_id
+               WHERE l.work_date BETWEEN ? AND ? AND l.qty_saved = 1 AND i.process_type_id IS NOT NULL
+               GROUP BY i.process_type_id""", (start, end)))
+        saved_filter = "AND e.work_date NOT IN (SELECT work_date FROM rx.rx_daily_logs WHERE qty_saved = 1)"
+    else:
+        saved_filter = ""
+    _add(conn.execute(
+        f"""SELECT ni.process_type_id AS pid, COALESCE(SUM(ni.work_qty),0) AS genuine,
+                   COALESCE(SUM(ni.cut_qty),0) AS cutting, COALESCE(SUM(ni.rework_qty),0) AS redo
+            FROM rx.night_work_entries e JOIN rx.night_work_items ni ON ni.entry_id = e.id
+            WHERE e.work_date BETWEEN ? AND ? {saved_filter}
+            GROUP BY ni.process_type_id""", (start, end)))
+
+    # 작업불량: 일지에 입력된 불량 전부 (qty_saved 무관, process_type_id 없는 예전 줄 제외)
+    defect = {}
+    if has_logs:
+        for r in conn.execute(
+            """SELECT i.process_type_id AS pid, COALESCE(SUM(i.defect),0) AS defect
+               FROM rx.rx_daily_log_items i JOIN rx.rx_daily_logs l ON l.id = i.log_id
+               WHERE l.work_date BETWEEN ? AND ? AND i.process_type_id IS NOT NULL
+               GROUP BY i.process_type_id""", (start, end)):
+            defect[r["pid"]] = _safe_float(r["defect"])
+
+    # 줄 목록: 일지에 쓰는 작업종류(sort_order 순) + 데이터가 있는 삭제된 작업종류(id 순, 일지 대상인 것만)
+    pts = {r["id"]: r for r in conn.execute(
+        f"SELECT id, name, COALESCE(is_deleted,0) AS is_deleted, {in_log_expr} AS in_log, sort_order "
+        f"FROM company_master.process_types")}
+    base_ids = [r["id"] for r in sorted(
+        (p for p in pts.values() if not p["is_deleted"] and p["in_log"] == 1),
+        key=lambda p: (p["sort_order"] if p["sort_order"] is not None else 0, p["id"]))]
+    has_data = {pid for pid, q in qty.items() if any(q)} | {pid for pid, d in defect.items() if d}
+    extra_ids = sorted(
+        pid for pid in has_data
+        if pid is not None and pid not in base_ids and (pid not in pts or pts[pid]["in_log"] == 1))
+
+    rows, tot = [], [0.0, 0.0, 0.0, 0.0]
+    for no, pid in enumerate(base_ids + extra_ids, start=1):
+        g, c, rd = qty.get(pid, [0.0, 0.0, 0.0])
+        d = defect.get(pid, 0.0)
+        tot = [tot[0] + g, tot[1] + c, tot[2] + rd, tot[3] + d]
+        name = (pts[pid]["name"] if pid in pts else None) or "-"
+        rows.append({"no": no, "name": name, "genuine": _fmt_log_num(g), "cutting": _fmt_log_num(c),
+                     "redo": _fmt_log_num(rd), "defect": _fmt_log_num(d)})
+    ctx["rows"] = rows
+    ctx["log_total"] = {"genuine": _fmt_log_num(tot[0], False), "cutting": _fmt_log_num(tot[1], False),
+                        "redo": _fmt_log_num(tot[2], False), "defect": _fmt_log_num(tot[3], False)}
+
+    # 불량율 / 최종 수율 (계 줄 기준)
+    whole = sum(tot)
+    if whole:
+        rate = tot[3] / whole * 100
+        ctx["defect_rate"] = f"{rate:.2f}%"
+        ctx["final_yield"] = f"{100 - rate:.2f}%"
+
+    # 작업일: RX 작업입력이 있는 날 ∪ RX작업일지가 있는 날
+    union_logs = "UNION SELECT work_date FROM rx.rx_daily_logs WHERE work_date BETWEEN ? AND ?" if has_logs else ""
+    params = (start, end, start, end) if has_logs else (start, end)
+    ctx["work_days"] = conn.execute(
+        f"""SELECT COUNT(*) AS n FROM (
+                SELECT DISTINCT e.work_date FROM rx.night_work_entries e JOIN rx.night_work_items ni ON ni.entry_id = e.id
+                WHERE e.work_date BETWEEN ? AND ? {union_logs})""", params).fetchone()["n"]
+    return render_template("night_work.html", **ctx)
+
+
 @app.route("/night-work")
 @login_required
 def night_work():
@@ -506,13 +615,23 @@ def night_work():
         flash("먼저 데이터를 불러와주세요.")
         return redirect(url_for("dashboard"))
 
+    view = request.args.get("view", "company")
+    if view not in ("company", "total", "ranking", "dailylog"):
+        view = "company"
+    if view == "dailylog":
+        try:
+            return _rx_daily_log_history(conn)
+        except Exception as e:
+            app.logger.exception("RX일지내역 처리 중 오류")
+            flash(f"RX일지내역 조회 중 오류가 발생했습니다: {type(e).__name__}: {e}")
+            return redirect(url_for("dashboard"))
+        finally:
+            conn.close()
+
     latest = conn.execute("SELECT MAX(work_date) as d FROM rx.night_work_entries").fetchone()["d"]
     default_date = latest or now_kst().strftime("%Y-%m-%d")
     start = request.args.get("start", "").strip() or default_date
     end = request.args.get("end", "").strip() or default_date
-    view = request.args.get("view", "company")
-    if view not in ("company", "total", "ranking"):
-        view = "company"
 
     rows = []
     if start and end:
