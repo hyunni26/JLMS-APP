@@ -486,11 +486,15 @@ def lens_types():
     if conn is None:
         flash("먼저 데이터를 불러와주세요.")
         return redirect(url_for("dashboard"))
-    types = conn.execute("SELECT * FROM company_master.lens_types ORDER BY name").fetchall()
+    # 삭제된 렌즈종류와 삭제된 품명은 표시하지 않는다
+    types = conn.execute(
+        "SELECT * FROM company_master.lens_types WHERE COALESCE(is_deleted, 0) = 0 ORDER BY name"
+    ).fetchall()
     items_by_type = {}
     for t in types:
         items = conn.execute(
-            "SELECT * FROM company_master.lens_type_items WHERE lens_type_id=? ORDER BY name", (t["id"],)
+            "SELECT * FROM company_master.lens_type_items "
+            "WHERE lens_type_id=? AND COALESCE(is_deleted, 0) = 0 ORDER BY name", (t["id"],)
         ).fetchall()
         items_by_type[t["id"]] = items
     conn.close()
