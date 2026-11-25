@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="breadcrumb"><a href="{{ url_for('dashboard') }}">← 목록</a></div>
+
+<style>
+  .st-title { display: flex; justify-content: space-between; align-items: flex-end; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .st-title h1 { margin: 0; }
+  .st-basis { font-size: 11px; color: var(--text-light); text-align: right; line-height: 1.4; }
+  .st-count { font-size: 13px; color: var(--navy); margin-bottom: 8px; }
+  .st-filter { display: flex; gap: 8px; }
+  .st-filter select { flex: 0 0 auto; max-width: 42%; }
+  .st-filter input { flex: 1; min-width: 0; }
+
+  .st-scroll {
+    overflow: auto; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y;
+    padding: 0; margin-bottom: 8px;
+  }
+  .st { border-collapse: separate; border-spacing: 0; }
+  .st th, .st td { background: var(--card); }
+  .st thead th { position: sticky; top: 0; z-index: 2; background: var(--navy); }
+  .st tbody tr:nth-child(even) { background: none; }
+  /* 품목 그룹마다 흰색 / 연한 회청색 번갈아 (스크립트가 g1 클래스를 붙임) */
+  .st tbody tr.g1 td { background: #F4F6FA; }
+  .st tbody tr.gstart td { border-top: 1px solid #C9D1E0; }
+  /* 품목·품명 왼쪽 고정 */
+  .st .c1, .st .c2 { position: sticky; z-index: 1; }
+  .st .c1 { left: 0; min-width: 72px; max-width: 72px; white-space: normal; word-break: keep-all; color: var(--navy); font-weight: 600; }
+  /* 품명이 길면 줄바꿈해서 오른쪽 숫자 칸이 보이게 */
+  .st .c2 { left: 72px; min-width: 120px; max-width: 120px; white-space: normal; word-break: break-all; border-right: 1px solid var(--border); }
+  .st thead th.c1, .st thead th.c2 { z-index: 3; color: white; }
+  .st tr.merged td.c2 { font-weight: 700; }
+  .st tr.neg td { color: #B3261E; }
+  .st-total {
+    background: var(--gold); color: var(--navy-dark); font-weight: bold; font-size: 13px;
+    border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; line-height: 1.5;
+  }
+  .st-note { font-size: 11px; color: var(--text-light); line-height: 1.5; padding: 0 2px; }
+</style>
+
+<div class="st-title">
+  <h1>렌즈 재고</h1>
+  <div class="st-basis">
+    기준:
+    {% for label, t in backups %}{{ label }} {{ t or '알 수 없음' }}{% if not loop.last %} · {% endif %}{% endfor %}
+  </div>
+</div>
+
+<div class="card">
+  <div class="st-count">{% if count_date %}최초 실사일: {{ count_date }}{% else %}최초 실사: 없음{% endif %}</div>
+  <div class="st-filter">
+    <select id="stType" aria-label="품목">
+      <option value="">전체 품목</option>
+      {% for t in types %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
+    </select>
+    <input type="text" id="stSearch" placeholder="품명·품목 검색" autocomplete="off" aria-label="품명 검색">
+  </div>
+</div>
+
+<div class="card st-scroll">
+  <table class="st">
+    <thead>
+      <tr>
+        <th class="c1">품목</th><th class="c2">품명</th>
+        <th class="num">현재고</th><th class="num">단가</th><th class="num">금액</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr class="{{ 'merged' if r.merged }} {{ 'neg' if r.current|round(4) < 0 }}"
+          data-type="{{ r.lens_type_id }}" data-search="{{ r.search }}"
+          data-cur="{{ r.current }}" data-amt="{{ r.amount }}">
+        <td class="c1">{{ r.lens_type_name }}</td>
+        <td class="c2">{{ r.item_name }}</td>
+        <td class="num">{{ r.current_txt }}</td>
+        <td class="num">{{ r.price_txt }}</td>
+        <td class="num">{{ r.amount_txt }}</td>
+      </tr>
+      {% endfor %}
+      <tr id="stEmpty" style="display:none;"><td colspan="5" class="empty">조건에 맞는 품명이 없습니다.</td></tr>
+    </tbody>
+  </table>
+</div>
+<div class="st-total" id="stTotal"></div>
+
+<div class="st-note">
+  · 단가 변경·재고 합산 설정은 관리자가 데스크톱 [설정 &gt; 거래처 정보 서버 반영]을 눌러야 앱에 반영됩니다.<br>
+  · 포장 입고는 포장 PC가 [금일 작업 종료] 또는 '저장 후 종료'를 해야 반영되어, 오늘 포장분이 늦게 보일 수 있습니다.
+</div>
+
+<script>
+  (function () {
+    var rows = Array.prototype.slice.call(document.querySelectorAll('.st tbody tr[data-type]'));
+    var typeSel = document.getElementById('stType'), search = document.getElementById('stSearch');
+    var total = document.getElementById('stTotal'), empty = document.getElementById('stEmpty');
+    var names = rows.map(function (tr) { return tr.children[0].textContent; });
+
+    function fmtQty(v) {
+      v = Math.round(v * 10000) / 10000;
+      return v.toLocaleString('ko-KR', { maximumFractionDigits: 4 });
+    }
+    function apply() {
+      var t = typeSel.value, q = search.value.trim().toLowerCase();
+      var n = 0, cur = 0, amt = 0, prevType = null, g = 1;
+      rows.forEach(function (tr, i) {
+        var show = (!t || tr.dataset.type === t) && (!q || tr.dataset.search.indexOf(q) !== -1);
+        tr.style.display = show ? '' : 'none';
+        if (!show) return;
+        n += 1; cur += parseFloat(tr.dataset.cur) || 0; amt += parseFloat(tr.dataset.amt) || 0;
+        // 같은 품목이 이어지면 첫 줄에만 품목 이름, 품목 그룹마다 배경 번갈아
+        var first = tr.dataset.type !== prevType;
+        if (first) g = 1 - g;
+        tr.children[0].textContent = first ? names[i] : '';
+        tr.classList.toggle('g1', g === 1);
+        tr.classList.toggle('gstart', first && n > 1);
+        prevType = tr.dataset.type;
+      });
+      empty.style.display = n ? 'none' : '';
+      total.textContent = '품목 ' + n.toLocaleString('ko-KR') + '개 · 현재고 합계 ' + fmtQty(cur) +
+                          ' · 총 금액 ' + Math.round(amt).toLocaleString('ko-KR') + '원';
+    }
+    typeSel.addEventListener('change', apply);
+    search.addEventListener('input', apply);
+    apply();
+
+    // 표 높이를 화면에 맞춰 하단 합계가 항상 보이게
+    var box = document.querySelector('.st-scroll');
+    function fit() {
+      var below = document.querySelector('.st-note').offsetHeight + total.offsetHeight + 8 + 8 + 24 + 14;
+      var h = window.innerHeight - box.getBoundingClientRect().top - window.scrollY - below;
+      box.style.maxHeight = Math.max(h, 260) + 'px';
+    }
+    fit();
+    window.addEventListener('resize', fit);
+  })();
+</script>
+{% endblock %}
