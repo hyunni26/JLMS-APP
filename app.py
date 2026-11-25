@@ -1,4 +1,5 @@
 import os
+import re
 import sqlite3
 import tempfile
 from datetime import timedelta, datetime, timezone
@@ -1183,6 +1184,162 @@ def yearly_performance():
     except Exception as e:
         app.logger.exception("yearly_performance 처리 중 오류")
         flash(f"연간 실적비교 조회 중 오류가 발생했습니다: {type(e).__name__}: {e}")
+        return redirect(url_for("dashboard"))
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+# ---------------- 8. 렌즈 재고 (데스크톱 '판매 관리 > 렌즈 재고'와 같은 계산) ----------------
+def _backup_label(name):
+    """sync 때 기록해 둔 백업 파일명({name}_YYYYMMDD_HHMMSS.db)에서 'MM-DD HH:MM'을 뽑는다. 없으면 None."""
+    try:
+        with open(DB_PATHS[name] + ".key", encoding="utf-8") as f:
+            key = f.read().strip()
+    except OSError:
+        return None
+    m = re.search(r"_(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})\.db$", key)
+    return f"{m.group(2)}-{m.group(3)} {m.group(4)}:{m.group(5)}" if m else None
+
+
+def _fmt_stock_qty(v):
+    """수량: 천 단위 콤마, 정수면 정수 / 소수가 있으면 그대로(12.5)"""
+    v = round(_safe_float(v), 4)
+    if v == int(v):
+        return f"{int(v):,}"
+    return f"{v:,.4f}".rstrip("0").rstrip(".")
+
+
+def _fmt_won(v):
+    """원 단위 반올림 + 콤마, 0이면 빈칸"""
+    w = round(_safe_float(v))
+    return f"{w:,}" if w else ""
+
+
+def _calc_lens_stock(conn):
+    """품명별 현재고 = 기준수량(최초 실사) + 포장입고 - 출고(반품 제외) + 조정.
+    실사가 있는 품명은 실사일 '다음날부터'의 포장/출고, adj_after_id 이후의 조정만 반영한다."""
+    has_parent = _has_column(conn, "company_master", "lens_type_items", "stock_parent_id")
+    items = conn.execute(
+        f"""SELECT t.id AS lens_type_id, t.name AS lens_type_name, i.id AS item_id, i.name AS item_name,
+                   i.price, {'i.stock_parent_id' if has_parent else 'NULL'} AS stock_parent_id
+            FROM company_master.lens_types t JOIN company_master.lens_type_items i ON i.lens_type_id = t.id
+            WHERE COALESCE(t.is_deleted, 0) = 0 AND COALESCE(i.is_deleted, 0) = 0
+            ORDER BY t.sort_order, t.id, i.name"""
+    ).fetchall()
+
+    initial = {}
+    count_dates = []
+    if _has_table(conn, "main", "inventory_initial_counts"):
+        for r in conn.execute(
+            "SELECT lens_type_id, lens_type_item_id, qty, count_date, adj_after_id FROM main.inventory_initial_counts"
+        ):
+            initial[(r["lens_type_id"], r["lens_type_item_id"])] = r
+            if r["count_date"]:
+                count_dates.append(r["count_date"])
+
+    def after_count(key, d):
+        ic = initial.get(key)
+        return ic is None or (d or "") > (ic["count_date"] or "")
+
+    mv = {}  # key -> [포장입고, 출고, 조정]
+    if _has_table(conn, "packing", "inventory_ledger"):
+        for r in conn.execute(
+            """SELECT l.lens_type_id, l.lens_type_item_id, p.work_date AS d, SUM(l.change_qty) AS packing_in
+               FROM packing.inventory_ledger l LEFT JOIN packing.packing_logs p ON p.id = l.ref_id
+               WHERE l.ref_type = 'packing'
+               GROUP BY l.lens_type_id, l.lens_type_item_id, p.work_date"""
+        ):
+            k = (r["lens_type_id"], r["lens_type_item_id"])
+            if after_count(k, r["d"]):
+                mv.setdefault(k, [0.0, 0.0, 0.0])[0] += _safe_float(r["packing_in"])
+    for r in conn.execute(
+        """SELECT si.lens_type_id, si.lens_type_item_id, COALESCE(si.item_date, s.statement_date) AS d,
+                  SUM(CASE WHEN si.quantity > 0 THEN si.quantity ELSE 0 END) AS shipped
+           FROM main.statement_items si LEFT JOIN main.statements s ON s.id = si.statement_id
+           WHERE si.lens_type_id IS NOT NULL AND si.lens_type_item_id IS NOT NULL
+           GROUP BY si.lens_type_id, si.lens_type_item_id, d"""
+    ):
+        k = (r["lens_type_id"], r["lens_type_item_id"])
+        if after_count(k, r["d"]):
+            mv.setdefault(k, [0.0, 0.0, 0.0])[1] += _safe_float(r["shipped"])
+    if _has_table(conn, "main", "inventory_adjustments"):
+        for r in conn.execute("SELECT id, lens_type_id, lens_type_item_id, delta FROM main.inventory_adjustments"):
+            k = (r["lens_type_id"], r["lens_type_item_id"])
+            ic = initial.get(k)
+            if ic is None or r["id"] > (ic["adj_after_id"] or 0):
+                mv.setdefault(k, [0.0, 0.0, 0.0])[2] += _safe_float(r["delta"])
+
+    rows = []
+    for it in items:
+        k = (it["lens_type_id"], it["item_id"])
+        p_in, ship, adj = mv.get(k, [0.0, 0.0, 0.0])
+        base = _safe_float(initial[k]["qty"]) if k in initial else 0.0
+        rows.append({
+            "lens_type_id": it["lens_type_id"], "lens_type_name": it["lens_type_name"],
+            "item_id": it["item_id"], "item_name": it["item_name"], "stock_parent_id": it["stock_parent_id"],
+            "packing_in": p_in, "shipped": ship, "current": base + p_in - ship + adj,
+            "price": _safe_float(it["price"]),
+        })
+
+    # 재고 합산: 하위 품명(B.stock_parent_id = A)은 대표 A 한 줄에 합쳐 표시 (자기 자신/대표 없음/2단계면 무효)
+    by_id = {r["item_id"]: r for r in rows}
+    parent = {}
+    for r in rows:
+        p = r["stock_parent_id"]
+        if p and p != r["item_id"] and p in by_id and not by_id[p]["stock_parent_id"]:
+            parent[r["item_id"]] = p
+    kids = {}
+    for cid, pid in parent.items():
+        kids.setdefault(pid, []).append(by_id[cid])
+    out = []
+    for r in rows:
+        if r["item_id"] in parent:
+            continue
+        members = [r] + kids.get(r["item_id"], [])
+        cur = sum(m["current"] for m in members)
+        out.append({
+            "lens_type_id": r["lens_type_id"], "lens_type_name": r["lens_type_name"],
+            "item_name": r["item_name"] + (f" (합산 {len(members)})" if len(members) > 1 else ""),
+            "merged": len(members) > 1,
+            "search": " ".join([r["lens_type_name"] or ""] + [m["item_name"] or "" for m in members]).lower(),
+            "current": cur,
+            "packing_in": sum(m["packing_in"] for m in members),
+            "shipped": sum(m["shipped"] for m in members),
+            "price": r["price"],
+            "amount": cur * r["price"],
+        })
+    return out, (max(count_dates) if count_dates else None)
+
+
+@app.route("/lens-stock")
+@login_required
+def lens_stock():
+    conn = None
+    try:
+        conn = get_db()
+        if conn is None:
+            flash("먼저 데이터를 불러와주세요.")
+            return redirect(url_for("dashboard"))
+        rows, count_date = _calc_lens_stock(conn)
+        for r in rows:
+            r["current_txt"] = _fmt_stock_qty(r["current"])
+            r["price_txt"] = _fmt_won(r["price"])
+            r["amount_txt"] = _fmt_won(r["amount"])
+        # 품목 필터 목록 (표 순서 그대로, 중복 없이)
+        types, seen = [], set()
+        for r in rows:
+            if r["lens_type_id"] not in seen:
+                seen.add(r["lens_type_id"])
+                types.append({"id": r["lens_type_id"], "name": r["lens_type_name"]})
+        backups = [(label, _backup_label(name)) for name, label in
+                   (("main", "main"), ("packing", "포장"), ("company_master", "품목"))]
+        return render_template(
+            "lens_stock.html", rows=rows, types=types, count_date=count_date, backups=backups,
+        )
+    except Exception as e:
+        app.logger.exception("lens_stock 처리 중 오류")
+        flash(f"렌즈 재고 조회 중 오류가 발생했습니다: {type(e).__name__}: {e}")
         return redirect(url_for("dashboard"))
     finally:
         if conn is not None:
