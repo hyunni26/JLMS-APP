@@ -3,17 +3,15 @@
 <div class="breadcrumb"><a href="{{ url_for('dashboard') }}">← 목록</a></div>
 
 <style>
-  .st-title { display: flex; justify-content: space-between; align-items: flex-end; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
-  .st-title h1 { margin: 0; }
-  .st-basis { font-size: 11px; color: var(--text-light); text-align: right; line-height: 1.4; }
-  .st-count { font-size: 13px; color: var(--navy); margin-bottom: 8px; }
+  .st-date { font-size: 13px; font-weight: 500; color: var(--text-light); margin-left: 4px; }
+  .st-filter-card { padding: 10px; }
   .st-filter { display: flex; gap: 8px; }
   .st-filter select { flex: 0 0 auto; max-width: 42%; }
   .st-filter input { flex: 1; min-width: 0; }
 
   .st-scroll {
     overflow: auto; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y;
-    padding: 0; margin-bottom: 8px;
+    padding: 0; margin-bottom: 0;
   }
   .st { border-collapse: separate; border-spacing: 0; }
   .st th, .st td { background: var(--card); }
@@ -30,23 +28,18 @@
   .st thead th.c1, .st thead th.c2 { z-index: 3; color: white; }
   .st tr.merged td.c2 { font-weight: 700; }
   .st tr.neg td { color: #B3261E; }
+  /* 합계: 화면 맨 아래에 고정 */
   .st-total {
-    background: var(--gold); color: var(--navy-dark); font-weight: bold; font-size: 13px;
-    border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; line-height: 1.5;
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+    background: var(--gold); color: var(--navy-dark); font-weight: bold; font-size: 14px;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); text-align: center;
+    box-shadow: 0 -2px 8px rgba(27, 42, 74, 0.15);
   }
-  .st-note { font-size: 11px; color: var(--text-light); line-height: 1.5; padding: 0 2px; }
 </style>
 
-<div class="st-title">
-  <h1>렌즈 재고</h1>
-  <div class="st-basis">
-    기준:
-    {% for label, t in backups %}{{ label }} {{ t or '알 수 없음' }}{% if not loop.last %} · {% endif %}{% endfor %}
-  </div>
-</div>
+<h1>렌즈 재고 <span class="st-date">(기준날짜 : {{ basis or '알 수 없음' }})</span></h1>
 
-<div class="card">
-  <div class="st-count">{% if count_date %}최초 실사일: {{ count_date }}{% else %}최초 실사: 없음{% endif %}</div>
+<div class="card st-filter-card">
   <div class="st-filter">
     <select id="stType" aria-label="품목">
       <option value="">전체 품목</option>
@@ -82,11 +75,6 @@
 </div>
 <div class="st-total" id="stTotal"></div>
 
-<div class="st-note">
-  · 단가 변경·재고 합산 설정은 관리자가 데스크톱 [설정 &gt; 거래처 정보 서버 반영]을 눌러야 앱에 반영됩니다.<br>
-  · 포장 입고는 포장 PC가 [금일 작업 종료] 또는 '저장 후 종료'를 해야 반영되어, 오늘 포장분이 늦게 보일 수 있습니다.
-</div>
-
 <script>
   (function () {
     var rows = Array.prototype.slice.call(document.querySelectorAll('.st tbody tr[data-type]'));
@@ -115,8 +103,7 @@
         prevType = tr.dataset.type;
       });
       empty.style.display = n ? 'none' : '';
-      total.textContent = '품목 ' + n.toLocaleString('ko-KR') + '개 · 현재고 합계 ' + fmtQty(cur) +
-                          ' · 총 금액 ' + Math.round(amt).toLocaleString('ko-KR') + '원';
+      total.textContent = '현재고 합계 ' + fmtQty(cur) + ' · 총 금액 ' + Math.round(amt).toLocaleString('ko-KR') + '원';
     }
     typeSel.addEventListener('change', apply);
     search.addEventListener('input', apply);
@@ -125,7 +112,7 @@
     // 표 높이를 화면에 맞춰 하단 합계가 항상 보이게
     var box = document.querySelector('.st-scroll');
     function fit() {
-      var below = document.querySelector('.st-note').offsetHeight + total.offsetHeight + 8 + 8 + 24 + 14;
+      var below = total.offsetHeight + 8;   // 고정 합계 바 높이 + 여백
       var h = window.innerHeight - box.getBoundingClientRect().top - window.scrollY - below;
       box.style.maxHeight = Math.max(h, 260) + 'px';
     }
