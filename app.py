@@ -1191,15 +1191,15 @@ def yearly_performance():
 
 
 # ---------------- 8. 렌즈 재고 (데스크톱 '판매 관리 > 렌즈 재고'와 같은 계산) ----------------
-def _backup_label(name):
-    """sync 때 기록해 둔 백업 파일명({name}_YYYYMMDD_HHMMSS.db)에서 'MM-DD HH:MM'을 뽑는다. 없으면 None."""
+def _backup_stamp(name):
+    """sync 때 기록해 둔 백업 파일명({name}_YYYYMMDD_HHMMSS.db)에서 'YY.MM.DD HH:MM'을 뽑는다. 없으면 None."""
     try:
         with open(DB_PATHS[name] + ".key", encoding="utf-8") as f:
             key = f.read().strip()
     except OSError:
         return None
-    m = re.search(r"_(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})\.db$", key)
-    return f"{m.group(2)}-{m.group(3)} {m.group(4)}:{m.group(5)}" if m else None
+    m = re.search(r"_\d{2}(\d{2})(\d{2})(\d{2})_(\d{2})(\d{2})\d{2}\.db$", key)
+    return f"{m.group(1)}.{m.group(2)}.{m.group(3)} {m.group(4)}:{m.group(5)}" if m else None
 
 
 def _fmt_stock_qty(v):
@@ -1321,7 +1321,7 @@ def lens_stock():
         if conn is None:
             flash("먼저 데이터를 불러와주세요.")
             return redirect(url_for("dashboard"))
-        rows, count_date = _calc_lens_stock(conn)
+        rows, _count_date = _calc_lens_stock(conn)
         for r in rows:
             r["current_txt"] = _fmt_stock_qty(r["current"])
             r["price_txt"] = _fmt_won(r["price"])
@@ -1332,10 +1332,9 @@ def lens_stock():
             if r["lens_type_id"] not in seen:
                 seen.add(r["lens_type_id"])
                 types.append({"id": r["lens_type_id"], "name": r["lens_type_name"]})
-        backups = [(label, _backup_label(name)) for name, label in
-                   (("main", "main"), ("packing", "포장"), ("company_master", "품목"))]
+        # 제목 옆 기준날짜 = main 백업 파일명의 시각
         return render_template(
-            "lens_stock.html", rows=rows, types=types, count_date=count_date, backups=backups,
+            "lens_stock.html", rows=rows, types=types, basis=_backup_stamp("main"),
         )
     except Exception as e:
         app.logger.exception("lens_stock 처리 중 오류")
