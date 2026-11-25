@@ -14,7 +14,7 @@
     padding: 0; margin-bottom: 0;
   }
   .st { border-collapse: separate; border-spacing: 0; }
-  .st th, .st td { background: var(--card); }
+  .st th, .st td { background: var(--card); text-align: center; }
   .st thead th { position: sticky; top: 0; z-index: 2; background: var(--navy); }
   .st tbody tr:nth-child(even) { background: none; }
   /* 품목 그룹마다 흰색 / 연한 회청색 번갈아 (스크립트가 g1 클래스를 붙임) */
@@ -29,10 +29,12 @@
   .st tr.merged td.c2 { font-weight: 700; }
   .st tr.neg td { color: #B3261E; }
   /* 합계: 화면 맨 아래에 고정 */
+  .st th.num, .st td.num { text-align: center; }
   .st-total {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
     background: var(--gold); color: var(--navy-dark); font-weight: bold; font-size: 14px;
-    padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); text-align: center;
+    /* 아래 여백은 홈 인디케이터 자리만 살짝 (두 줄처럼 보이지 않게) */
+    padding: 12px 16px max(12px, calc(env(safe-area-inset-bottom) - 10px)); text-align: center;
     box-shadow: 0 -2px 8px rgba(27, 42, 74, 0.15);
   }
 </style>
@@ -111,9 +113,18 @@
 
     // 표 높이를 화면에 맞춰 하단 합계가 항상 보이게
     var box = document.querySelector('.st-scroll');
+    // 실제 화면 높이. 아이폰 홈 화면 앱(상태바 투명)에서는 하단 고정 요소가 상태바 높이만큼
+    // 위로 뜨는 버그가 있어, 그때는 화면(screen) 높이를 기준으로 직접 위치를 잡는다.
+    function viewH() {
+      var h = window.innerHeight;
+      if (window.navigator.standalone && window.innerWidth < window.innerHeight && screen.height > h) h = screen.height;
+      return h;
+    }
     function fit() {
-      var below = total.offsetHeight + 8;   // 고정 합계 바 높이 + 여백
-      var h = window.innerHeight - box.getBoundingClientRect().top - window.scrollY - below;
+      var vh = viewH();
+      total.style.bottom = 'auto';
+      total.style.top = (vh - total.offsetHeight) + 'px';
+      var h = vh - box.getBoundingClientRect().top - window.scrollY - total.offsetHeight - 8;
       box.style.maxHeight = Math.max(h, 260) + 'px';
     }
     fit();
