@@ -67,6 +67,12 @@ def sync_all_dbs(save_paths):
         ok2, msg = download_db_backup(latest["key"], save_paths[name])
         if ok2:
             results[name] = (True, latest["last_modified"])
+            # 어떤 백업 파일을 받았는지 기록 (파일명 시각을 화면에 '기준 시각'으로 표시하기 위함)
+            try:
+                with open(save_paths[name] + ".key", "w", encoding="utf-8") as f:
+                    f.write(latest["key"])
+            except OSError:
+                pass
         else:
             results[name] = (False, msg)
             all_ok = False
